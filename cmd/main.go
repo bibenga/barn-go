@@ -22,40 +22,41 @@ import (
 const driver string = "pgx"
 const dsn string = "host=host.docker.internal port=5432 user=rds password=sqlsql dbname=barn TimeZone=UTC sslmode=disable"
 
-func main() {
-	// log.SetFlags(log.LstdFlags | log.Lmicroseconds | log.Lshortfile | log.Lmsgprefix)
-	log.SetFlags(log.Ltime | log.Lmicroseconds)
-	log.SetPrefix("")
-
-	// os.Remove("./barn/_barn.db")
-
-	// db, err := sql.Open("sqlite3", "./barn/_barn.db")
-	// db, err := sql.Open("sqlite3", "file:barn/_barn.db?cache=shared&mode=rwc&_journal_mode=WAL&_loc=UTC")
-
-	connConfig, err := pgx.ParseConfig(dsn)
-	if err != nil {
-		slog.Error("db config errorz", "error", err)
-		panic(err)
+func initDb(debug bool) *sql.DB {
+	var connectionString string = dsn
+	if debug {
+		connConfig, err := pgx.ParseConfig(dsn)
+		if err != nil {
+			slog.Error("db config errorz", "error", err)
+			panic(err)
+		}
+		connConfig.Tracer = &tracelog.TraceLog{
+			Logger:   pgxslog.NewLogger(slog.Default()),
+			LogLevel: tracelog.LogLevelDebug,
+		}
+		connectionString = stdlib.RegisterConnConfig(connConfig)
 	}
-	connConfig.Tracer = &tracelog.TraceLog{
-		Logger:   pgxslog.NewLogger(slog.Default()),
-		LogLevel: tracelog.LogLevelDebug,
-	}
-	connStr := stdlib.RegisterConnConfig(connConfig)
-	db, err := sql.Open(driver, connStr)
-
-	// db, err := sql.Open(driver, dsn)
+	db, err := sql.Open(driver, connectionString)
 	if err != nil {
 		slog.Error("db error", "error", err)
 		panic(err)
 	}
+	return db
+}
+
+func main() {
+	log.SetFlags(log.LstdFlags | log.Lmicroseconds | log.Lshortfile | log.Lmsgprefix)
+	// log.SetFlags(log.Ltime | log.Lmicroseconds)
+	log.SetPrefix("")
+
+	db := initDb(true)
 	defer db.Close()
 
 	osSignal := make(chan os.Signal, 1)
 	signal.Notify(osSignal, os.Interrupt)
 
 	scheduler := barn.NewScheduler(db)
-	err = scheduler.InitializeDB()
+	err := scheduler.InitializeDB()
 	if err != nil {
 		slog.Error("db error", "error", err)
 		panic(err)

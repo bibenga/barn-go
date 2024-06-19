@@ -2,7 +2,6 @@ package barn
 
 import (
 	"database/sql"
-	"fmt"
 	"log/slog"
 	"time"
 
@@ -36,7 +35,6 @@ func NewLockManager(db *sql.DB) *LockManager {
 		expiration: 10 * time.Second,
 		isLocked:   false,
 		db:         db,
-		tableName:  "barn_lock",
 		stop:       make(chan struct{}),
 		stopped:    make(chan struct{}),
 	}
@@ -46,13 +44,13 @@ func NewLockManager(db *sql.DB) *LockManager {
 func (manager *LockManager) InitializeDB() error {
 	db := manager.db
 	slog.Info("create table", "table", manager.tableName)
-	sqlStmt := fmt.Sprintf(`
-	CREATE TABLE IF NOT EXISTS "%s"  (
+	sqlStmt := `
+	CREATE TABLE IF NOT EXISTS barn_lock  (
 	    name VARCHAR NOT NULL,
         locked_at TIMESTAMP DEFAULT (CURRENT_TIMESTAMP) NOT NULL,
         locked_by VARCHAR NOT NULL DEFAULT '',
         PRIMARY KEY (name)
-	)`, manager.tableName)
+	)`
 	_, err := db.Exec(sqlStmt)
 	return err
 }

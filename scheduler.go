@@ -81,20 +81,6 @@ func NewScheduler(db *sql.DB) *Scheduler {
 func (scheduler *Scheduler) InitializeDB() error {
 	db := scheduler.db
 	slog.Info("create table", "table", "barn_entry")
-	// sqlite
-	// sqlStmt := `
-	// CREATE TABLE  IF NOT EXISTS "barn_entry" (
-	//     id INTEGER NOT NULL,
-	//     name VARCHAR NOT NULL,
-	//     is_active BOOLEAN DEFAULT TRUE NOT NULL,
-	//     cron VARCHAR,
-	//     next_ts TIMESTAMP WITH TIME ZONE,
-	//     last_ts TIMESTAMP WITH TIME ZONE,
-	//     message JSON,
-	//     PRIMARY KEY (id),
-	//     UNIQUE (name)
-	// )`
-	// postgres
 	sqlStmt := `
 	CREATE TABLE IF NOT EXISTS "barn_entry" (
         id SERIAL NOT NULL, 
@@ -104,7 +90,8 @@ func (scheduler *Scheduler) InitializeDB() error {
         next_ts TIMESTAMP WITH TIME ZONE, 
         last_ts TIMESTAMP WITH TIME ZONE, 
         message JSONB, 
-        PRIMARY KEY (id)
+        PRIMARY KEY (id),
+		UNIQUE (name)
 	)`
 	_, err := db.Exec(sqlStmt)
 	return err
