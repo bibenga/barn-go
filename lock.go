@@ -65,7 +65,7 @@ func (manager *LockManager) Stop() {
 }
 
 func (manager *LockManager) Run() {
-	if manager.isExist() {
+	if manager.isLockExist() {
 		slog.Info("the lock is exists", "lock", manager.lockName)
 	} else {
 		manager.create()
@@ -112,7 +112,7 @@ func (manager *LockManager) run() {
 	}
 }
 
-func (manager *LockManager) isExist() bool {
+func (manager *LockManager) isLockExist() bool {
 	db := manager.db
 	stmt, err := db.Prepare(
 		`select 1 

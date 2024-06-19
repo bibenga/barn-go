@@ -475,7 +475,3 @@ func (scheduler *Scheduler) deactivate(entry *Entry) error {
 	}
 	return nil
 }
-
-func (scheduler *Scheduler) DeleteByName(name string) error {
-	return nil
-}
