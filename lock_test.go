@@ -14,10 +14,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const driver string = "pgx"
-const dbname string = "barn_test"
-const dsn string = "host=host.docker.internal port=5432 user=rds password=sqlsql dbname=barn TimeZone=UTC sslmode=disable"
-const dsn_test string = "host=host.docker.internal port=5432 user=rds password=sqlsql dbname=barn_test TimeZone=UTC sslmode=disable"
+const driver = "pgx"
+const dbname = "barn"
+const dbname_test = "barn_test"
+const dsn_tpl = "host=host.docker.internal port=5432 user=rds password=sqlsql dbname=%s TimeZone=UTC sslmode=disable"
+
+var dsn = fmt.Sprintf(dsn_tpl, dbname)
+var dsn_test = fmt.Sprintf(dsn_tpl, dbname_test)
+var drop_db_query = fmt.Sprintf(`drop database if exists %s`, dbname_test)
+var create_db_query = fmt.Sprintf(`create database %s`, dbname_test)
 
 func newConnection(dsn string) (*sql.DB, error) {
 	connConfig, err := pgx.ParseConfig(dsn)
@@ -43,10 +48,10 @@ func newTestConnection() (*sql.DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	if _, err := db.Exec(fmt.Sprintf(`drop database if exists %s`, dbname)); err != nil {
+	if _, err := db.Exec(drop_db_query); err != nil {
 		return nil, err
 	}
-	if _, err := db.Exec(fmt.Sprintf(`create database %s`, dbname)); err != nil {
+	if _, err := db.Exec(create_db_query); err != nil {
 		return nil, err
 	}
 	db, err = newConnection(dsn_test)
@@ -64,6 +69,13 @@ func setup(t *testing.T) *sql.DB {
 	assert.NoError(err)
 	assert.NotNil(db)
 	assert.NoError(db.Ping())
+
+	t.Cleanup(func() {
+		t.Helper()
+		t.Log("db - Close")
+		err = db.Close()
+		assert.NoError(err)
+	})
 	return db
 }
 
@@ -81,13 +93,6 @@ func newTx(t *testing.T, readOnly bool) *sql.Tx {
 	})
 	assert.NoError(err)
 
-	// will call in a reverse order
-	t.Cleanup(func() {
-		t.Helper()
-		t.Log("db - Close")
-		err = db.Close()
-		assert.NoError(err)
-	})
 	t.Cleanup(func() {
 		t.Helper()
 		t.Log("tx - Rollback")
@@ -99,7 +104,9 @@ func newTx(t *testing.T, readOnly bool) *sql.Tx {
 
 func TestDb(t *testing.T) {
 	assert := require.New(t)
+
 	db := setup(t)
+
 	row := db.QueryRow("select 1,2")
 	assert.NoError(row.Err())
 	assert.NotNil(row)
@@ -111,6 +118,7 @@ func TestDb(t *testing.T) {
 
 func TestTx(t *testing.T) {
 	assert := require.New(t)
+
 	tx := newTx(t, false)
 	assert.NotNil(tx)
 
