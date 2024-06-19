@@ -79,10 +79,10 @@ func (q *LockQuery) GetConfirmQuery() string {
 	return fmt.Sprintf(
 		`update %s 
 		set %s = $1, %s = $2 
-		where %s = $3 and %s = $4 and (%s is null or %s > $5)`,
+		where %s = $3 and %s = $4 and %s > $5`,
 		q.tableName,
 		q.lockedByField, q.lockedAtField,
-		q.nameField, q.lockedByField, q.lockedAtField, q.lockedAtField,
+		q.nameField, q.lockedByField, q.lockedAtField,
 	)
 }
 

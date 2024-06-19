@@ -26,7 +26,6 @@ type LockManager struct {
 	checkInterval time.Duration
 	expiration    time.Duration
 	isLocked      bool
-	lockedAt      *time.Time
 	stop          chan struct{}
 	stopped       chan struct{}
 }
@@ -101,29 +100,6 @@ func (manager *LockManager) Run() {
 }
 
 func (manager *LockManager) check() {
-	// dbLock := manager.getDbLock()
-	// if manager.isLocked {
-	// 	if dbLock.LockedBy.Valid && dbLock.LockedBy.String == manager.hostname {
-	// 		if manager.tryConfirmOrCapture() {
-	// 			manager.log.Info("the lock is still captured")
-	// 		} else {
-	// 			manager.log.Warn("the lock was captured unexpectedly by someone")
-	// 			manager.isLocked = false
-	// 			manager.onReleased()
-	// 		}
-	// 	} else {
-	// 		manager.log.Warn("the lock was captured by someone")
-	// 		manager.isLocked = false
-	// 		manager.onReleased()
-	// 	}
-	// } else if !dbLock.LockedAt.Valid || time.Since(dbLock.LockedAt.Time) > manager.expiration {
-	// 	manager.log.Info("the lock is rotten")
-	// 	if manager.tryConfirmOrCapture() {
-	// 		manager.isLocked = true
-	// 		manager.onCaptured()
-	// 	}
-	// }
-
 	if manager.isLocked {
 		if manager.confirm() {
 			manager.log.Info("the lock is still captured")
@@ -138,7 +114,8 @@ func (manager *LockManager) check() {
 			manager.isLocked = true
 			manager.onCaptured()
 		} else {
-			manager.log.Info("the lock is alive")
+			// manager.log.Info("the lock has been captured")
+			manager.logState()
 		}
 	}
 }
@@ -202,38 +179,15 @@ func (manager *LockManager) create() {
 	}
 }
 
-func (manager *LockManager) getDbLock() *Lock {
-	db := manager.db
-	stmt, err := db.Prepare(manager.query.GetSelectQuery())
-	if err != nil {
-		manager.log.Error("cannot prepare query", "error", err)
-		panic(err)
-	}
-	defer stmt.Close()
-	var dbLock Lock = Lock{Name: manager.lockName}
-	row := stmt.QueryRow(manager.lockName)
-	switch err := row.Scan(&dbLock.LockedAt, &dbLock.LockedBy); err {
-	case sql.ErrNoRows:
-		manager.log.Info("the lock is not found")
-		return nil
-	case nil:
-		manager.log.Info("the lock is found", "LockedBy", dbLock.LockedBy.String)
-		return &dbLock
-	default:
-		manager.log.Error("db error", "error", err)
-		panic(err)
-	}
-}
-
-func (manager *LockManager) confirm() bool {
+func (manager *LockManager) tryCapture() bool {
 	db := manager.db
 	lockedAt := time.Now().UTC()
 	rottenTs := time.Now().UTC().Add(-manager.expiration)
 	// manager.log.Info("try capture lock", "rottenTs", rottenTs)
 	res, err := db.Exec(
-		manager.query.GetConfirmQuery(),
+		manager.query.GetLockQuery(),
 		manager.hostname, lockedAt,
-		manager.lockName, manager.hostname, rottenTs,
+		manager.lockName, rottenTs,
 	)
 	if err != nil {
 		manager.log.Error("db error", "error", err)
@@ -247,15 +201,14 @@ func (manager *LockManager) confirm() bool {
 	return rowsAffected == 1
 }
 
-func (manager *LockManager) tryCapture() bool {
+func (manager *LockManager) confirm() bool {
 	db := manager.db
 	lockedAt := time.Now().UTC()
 	rottenTs := time.Now().UTC().Add(-manager.expiration)
-	// manager.log.Info("try capture lock", "rottenTs", rottenTs)
 	res, err := db.Exec(
-		manager.query.GetLockQuery(),
+		manager.query.GetConfirmQuery(),
 		manager.hostname, lockedAt,
-		manager.lockName, rottenTs,
+		manager.lockName, manager.hostname, rottenTs,
 	)
 	if err != nil {
 		manager.log.Error("db error", "error", err)
@@ -291,6 +244,27 @@ func (manager *LockManager) release() {
 		} else {
 			manager.log.Info("the lock was created by someone")
 		}
+	}
+}
+
+func (manager *LockManager) logState() {
+	db := manager.db
+	stmt, err := db.Prepare(manager.query.GetSelectQuery())
+	if err != nil {
+		manager.log.Error("cannot prepare query", "error", err)
+		panic(err)
+	}
+	defer stmt.Close()
+	var dbLock Lock = Lock{Name: manager.lockName}
+	row := stmt.QueryRow(manager.lockName)
+	switch err := row.Scan(&dbLock.LockedAt, &dbLock.LockedBy); err {
+	case sql.ErrNoRows:
+		manager.log.Info("the lock is not found")
+	case nil:
+		manager.log.Info("the lock is found", "LockedBy", dbLock.LockedBy.String, "LockedAt", dbLock.LockedAt.Time)
+	default:
+		manager.log.Error("db error", "error", err)
+		panic(err)
 	}
 }
 

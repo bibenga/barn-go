@@ -57,6 +57,10 @@ func (e *Entry) IsChanged(o *Entry) bool {
 
 type EntryMap map[int32]*Entry
 
+type SchedulerListener interface {
+	Process(name string, moment time.Time, message string) error
+}
+
 type Scheduler struct {
 	entries EntryMap
 	db      *sql.DB
