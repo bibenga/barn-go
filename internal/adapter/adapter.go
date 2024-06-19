@@ -5,6 +5,7 @@ import "fmt"
 type LockQuery struct {
 	tableName     string
 	nameField     string
+	versionField  string
 	lockedAtField string
 	lockedByField string
 }
@@ -13,6 +14,7 @@ func NewDefaultLockQuery() *LockQuery {
 	return &LockQuery{
 		tableName:     "barn_lock",
 		nameField:     "name",
+		versionField:  "version",
 		lockedAtField: "locked_at",
 		lockedByField: "locked_by",
 	}
@@ -22,8 +24,8 @@ func (q *LockQuery) GetCreateQuery() string {
 	return fmt.Sprintf(
 		`CREATE TABLE IF NOT EXISTS %s  (
 			%s VARCHAR NOT NULL,
-			%s TIMESTAMP WITH TIME ZONE NOT NULL,
-			%s VARCHAR NOT NULL DEFAULT '',
+			%s TIMESTAMP WITH TIME ZONE,
+			%s VARCHAR,
 			PRIMARY KEY (%s)
 		)`,
 		q.tableName,
@@ -43,10 +45,10 @@ func (q *LockQuery) GetIsExistQuery() string {
 
 func (q *LockQuery) GetInsertQuery() string {
 	return fmt.Sprintf(
-		`insert into %s(%s, %s, %s) 
-		values ($1, $2, $3) 
+		`insert into %s(%s) 
+		values ($1) 
 		on conflict (%s) do nothing`,
-		q.tableName, q.nameField, q.lockedAtField, q.lockedByField,
+		q.tableName, q.nameField,
 		q.nameField,
 	)
 }
@@ -62,14 +64,36 @@ func (q *LockQuery) GetSelectQuery() string {
 	)
 }
 
-func (q *LockQuery) GetUpdateQuery() string {
+func (q *LockQuery) GetLockQuery() string {
 	return fmt.Sprintf(
 		`update %s 
 		set %s = $1, %s = $2 
-		where %s = $3 and %s = $4 and %s = $5`,
+		where %s = $3 and (%s is null or %s < $4)`,
 		q.tableName,
-		q.lockedAtField, q.lockedByField,
-		q.nameField, q.lockedAtField, q.lockedByField,
+		q.lockedByField, q.lockedAtField,
+		q.nameField, q.lockedAtField, q.lockedAtField,
+	)
+}
+
+func (q *LockQuery) GetConfirmQuery() string {
+	return fmt.Sprintf(
+		`update %s 
+		set %s = $1, %s = $2 
+		where %s = $3 and %s = $4 and (%s is null or %s > $5)`,
+		q.tableName,
+		q.lockedByField, q.lockedAtField,
+		q.nameField, q.lockedByField, q.lockedAtField, q.lockedAtField,
+	)
+}
+
+func (q *LockQuery) GetUnlockQuery() string {
+	return fmt.Sprintf(
+		`update %s 
+		set %s = null, %s = null
+		where %s = $1 and %s = $2 and (%s is null or %s > $3)`,
+		q.tableName,
+		q.lockedByField, q.lockedAtField,
+		q.nameField, q.lockedByField, q.lockedAtField, q.lockedAtField,
 	)
 }
 
