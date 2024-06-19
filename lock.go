@@ -26,6 +26,7 @@ type LockManager struct {
 	checkInterval time.Duration
 	expiration    time.Duration
 	isLocked      bool
+	lockedAt      *time.Time
 	stop          chan struct{}
 	stopped       chan struct{}
 }
@@ -72,13 +73,21 @@ func (manager *LockManager) Stop() {
 }
 
 func (manager *LockManager) Run() {
-	if manager.isLockExist() {
-		manager.log.Info("the lock exists")
+	if isLockExist, err := manager.isLockExist(); err != nil {
+		panic(err)
 	} else {
-		manager.create()
+		if isLockExist {
+			manager.log.Info("the lock exists")
+		} else {
+			if err := manager.create(); err != nil {
+				panic(err)
+			}
+		}
 	}
 
-	manager.check()
+	if err := manager.check(); err != nil {
+		panic(err)
+	}
 
 	check := time.NewTicker(manager.checkInterval)
 	defer check.Stop()
@@ -90,42 +99,53 @@ func (manager *LockManager) Run() {
 			manager.log.Info("terminate")
 			manager.stopped <- struct{}{}
 			if manager.isLocked {
-				manager.release()
+				if err := manager.release(); err != nil {
+					panic(err)
+				}
 			}
 			return
 		case <-check.C:
-			manager.check()
+			if err := manager.check(); err != nil {
+				panic(err)
+			}
 		}
 	}
 }
 
-func (manager *LockManager) check() {
+func (manager *LockManager) check() error {
 	if manager.isLocked {
-		if manager.confirm() {
-			manager.log.Info("the lock is still captured")
+		if confirmed, err := manager.confirm(); err != nil {
+			return err
 		} else {
-			manager.log.Warn("the lock was captured unexpectedly")
-			manager.isLocked = false
-			manager.onReleased()
+			if confirmed {
+				manager.log.Info("the lock is still captured")
+			} else {
+				manager.log.Warn("the lock was captured unexpectedly")
+				manager.onReleased()
+			}
 		}
 	} else {
-		if manager.tryCapture() {
-			manager.log.Info("the lock is rotten and is captured")
-			manager.isLocked = true
-			manager.onCaptured()
+		if captured, err := manager.tryCapture(); err != nil {
+			return err
 		} else {
-			// manager.log.Info("the lock has been captured")
-			manager.logState()
+			if captured {
+				manager.log.Info("the lock is rotten and is captured")
+				manager.onCaptured()
+			} else {
+				// manager.log.Info("the lock has been captured")
+				return manager.logState()
+			}
 		}
 	}
+	return nil
 }
 
-func (manager *LockManager) isLockExist() bool {
+func (manager *LockManager) isLockExist() (bool, error) {
 	db := manager.db
 	stmt, err := db.Prepare(manager.query.GetIsExistQuery())
 	if err != nil {
 		manager.log.Error("cannot prepare query", "error", err)
-		panic(err)
+		return false, err
 	}
 	defer stmt.Close()
 	var count int
@@ -133,24 +153,24 @@ func (manager *LockManager) isLockExist() bool {
 	switch err := row.Scan(&count); err {
 	case sql.ErrNoRows:
 		manager.log.Info("the lock is not exist")
-		return false
+		return false, nil
 	case nil:
 		manager.log.Info("the lock is exist")
-		return true
+		return true, nil
 	default:
 		manager.log.Error("db error", "error", err)
-		panic(err)
+		return false, err
 	}
 }
 
-func (manager *LockManager) create() {
+func (manager *LockManager) create() error {
 	db := manager.db
 	manager.log.Info("create the lock")
 
 	tx, err := db.Begin()
 	if err != nil {
 		manager.log.Error("db error", "error", err)
-		panic(err)
+		return err
 	}
 
 	res, err := tx.Exec(
@@ -159,12 +179,12 @@ func (manager *LockManager) create() {
 	)
 	if err != nil {
 		manager.log.Error("cannot create lock", "error", err)
-		panic(err)
+		return err
 	}
 	rowsAffected, err := res.RowsAffected()
 	if err != nil {
 		manager.log.Error("db error", "error", err)
-		panic(err)
+		return err
 	}
 	if rowsAffected == 1 {
 		manager.log.Info("the lock is created")
@@ -172,14 +192,14 @@ func (manager *LockManager) create() {
 		manager.log.Info("the lock was created by someone")
 	}
 
-	err = tx.Commit()
-	if err != nil {
+	if err := tx.Commit(); err != nil {
 		manager.log.Error("db error", "error", err)
-		panic(err)
+		return err
 	}
+	return nil
 }
 
-func (manager *LockManager) tryCapture() bool {
+func (manager *LockManager) tryCapture() (bool, error) {
 	db := manager.db
 	lockedAt := time.Now().UTC()
 	rottenTs := time.Now().UTC().Add(-manager.expiration)
@@ -191,17 +211,21 @@ func (manager *LockManager) tryCapture() bool {
 	)
 	if err != nil {
 		manager.log.Error("db error", "error", err)
-		panic(err)
+		return false, err
 	}
-	rowsAffected, err := res.RowsAffected()
-	if err != nil {
+	if rowsAffected, err := res.RowsAffected(); err != nil {
 		manager.log.Error("db error", "error", err)
-		panic(err)
+		return false, err
+	} else {
+		if rowsAffected == 1 {
+			manager.isLocked = true
+			manager.lockedAt = &lockedAt
+		}
+		return manager.isLocked, nil
 	}
-	return rowsAffected == 1
 }
 
-func (manager *LockManager) confirm() bool {
+func (manager *LockManager) confirm() (bool, error) {
 	db := manager.db
 	lockedAt := time.Now().UTC()
 	rottenTs := time.Now().UTC().Add(-manager.expiration)
@@ -212,17 +236,23 @@ func (manager *LockManager) confirm() bool {
 	)
 	if err != nil {
 		manager.log.Error("db error", "error", err)
-		panic(err)
+		return false, err
 	}
-	rowsAffected, err := res.RowsAffected()
-	if err != nil {
+	if rowsAffected, err := res.RowsAffected(); err != nil {
 		manager.log.Error("db error", "error", err)
-		panic(err)
+		return false, err
+	} else {
+		if rowsAffected == 1 {
+			manager.isLocked = false
+			manager.lockedAt = nil
+		} else {
+			manager.lockedAt = &lockedAt
+		}
+		return manager.isLocked, nil
 	}
-	return rowsAffected == 1
 }
 
-func (manager *LockManager) release() {
+func (manager *LockManager) release() error {
 	if manager.isLocked {
 		db := manager.db
 		rottenTs := time.Now().UTC().Add(-manager.expiration)
@@ -232,27 +262,32 @@ func (manager *LockManager) release() {
 		)
 		if err != nil {
 			manager.log.Error("db error", "error", err)
-			panic(err)
+			return err
 		}
-		rowsAffected, err := res.RowsAffected()
-		if err != nil {
+		if rowsAffected, err := res.RowsAffected(); err != nil {
 			manager.log.Error("db error", "error", err)
-			panic(err)
-		}
-		if rowsAffected == 1 {
-			manager.log.Info("the lock is released")
+			return err
 		} else {
-			manager.log.Info("the lock was created by someone")
+			manager.isLocked = false
+			manager.lockedAt = nil
+			if rowsAffected == 1 {
+				manager.log.Info("the lock is released")
+			} else {
+				manager.log.Info("the lock was created by someone")
+			}
 		}
+	} else {
+		manager.log.Info("the lock was created by someone")
 	}
+	return nil
 }
 
-func (manager *LockManager) logState() {
+func (manager *LockManager) logState() error {
 	db := manager.db
 	stmt, err := db.Prepare(manager.query.GetSelectQuery())
 	if err != nil {
 		manager.log.Error("cannot prepare query", "error", err)
-		panic(err)
+		return err
 	}
 	defer stmt.Close()
 	var dbLock Lock = Lock{Name: manager.lockName}
@@ -260,11 +295,13 @@ func (manager *LockManager) logState() {
 	switch err := row.Scan(&dbLock.LockedAt, &dbLock.LockedBy); err {
 	case sql.ErrNoRows:
 		manager.log.Info("the lock is not found")
+		return nil
 	case nil:
 		manager.log.Info("the lock is found", "LockedBy", dbLock.LockedBy.String, "LockedAt", dbLock.LockedAt.Time)
+		return nil
 	default:
 		manager.log.Error("db error", "error", err)
-		panic(err)
+		return err
 	}
 }
 
