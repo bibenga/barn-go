@@ -49,7 +49,7 @@ func main() {
 	// log.SetFlags(log.Ltime | log.Lmicroseconds)
 	log.SetPrefix("")
 
-	db := initDb(true)
+	db := initDb(false)
 	defer db.Close()
 
 	osSignal := make(chan os.Signal, 1)
@@ -83,7 +83,7 @@ func main() {
 		slog.Error("db error", "error", err)
 		panic(err)
 	}
-	go scheduler.Run()
+	// go scheduler.Run()
 
 	manager := barn.NewLockManager(db)
 	err = manager.InitializeDB()
@@ -91,7 +91,7 @@ func main() {
 		slog.Error("db error", "error", err)
 		panic(err)
 	}
-	// go manager.Run()
+	go manager.Run()
 
 	s := <-osSignal
 	slog.Info("os signal received", "signal", s)

@@ -1,4 +1,4 @@
-package internal
+package adapter
 
 import "fmt"
 
@@ -22,7 +22,7 @@ func (q *LockQuery) GetCreateQuery() string {
 	return fmt.Sprintf(
 		`CREATE TABLE IF NOT EXISTS %s  (
 			%s VARCHAR NOT NULL,
-			%s TIMESTAMP DEFAULT (CURRENT_TIMESTAMP) NOT NULL,
+			%s TIMESTAMP WITH TIME ZONE NOT NULL,
 			%s VARCHAR NOT NULL DEFAULT '',
 			PRIMARY KEY (%s)
 		)`,
@@ -51,7 +51,7 @@ func (q *LockQuery) GetInsertQuery() string {
 	)
 }
 
-func (q *LockQuery) GetSelectByNameQuery() string {
+func (q *LockQuery) GetSelectQuery() string {
 	return fmt.Sprintf(
 		`select %s, %s 
 		from %s 
