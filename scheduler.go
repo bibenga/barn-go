@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/adhocore/gronx"
+	"github.com/bibenga/barn-go/internal/adapter"
 )
 
 type Entry struct {
@@ -64,6 +65,7 @@ type SchedulerListener interface {
 type Scheduler struct {
 	entries EntryMap
 	db      *sql.DB
+	query   adapter.EntryQuery
 	stop    chan struct{}
 	stopped chan struct{}
 	timer   *time.Timer
@@ -76,6 +78,7 @@ func NewScheduler(db *sql.DB) *Scheduler {
 	manager := Scheduler{
 		entries: make(EntryMap),
 		db:      db,
+		query:   adapter.NewDefaultEntryQuery(),
 		stop:    make(chan struct{}),
 		stopped: make(chan struct{}),
 	}
@@ -85,19 +88,7 @@ func NewScheduler(db *sql.DB) *Scheduler {
 func (scheduler *Scheduler) InitializeDB() error {
 	db := scheduler.db
 	slog.Info("create table", "table", "barn_entry")
-	sqlStmt := `
-	CREATE TABLE IF NOT EXISTS "barn_entry" (
-        id SERIAL NOT NULL, 
-        name VARCHAR NOT NULL, 
-        is_active BOOLEAN DEFAULT TRUE NOT NULL, 
-        cron VARCHAR, 
-        next_ts TIMESTAMP WITH TIME ZONE, 
-        last_ts TIMESTAMP WITH TIME ZONE, 
-        message JSONB, 
-        PRIMARY KEY (id),
-		UNIQUE (name)
-	)`
-	_, err := db.Exec(sqlStmt)
+	_, err := db.Exec(scheduler.query.GetCreateQuery())
 	return err
 }
 
@@ -111,17 +102,6 @@ func (scheduler *Scheduler) Stop() {
 }
 
 func (scheduler *Scheduler) Run() {
-	// db := scheduler.db
-	// stmt, err := db.Prepare(
-	// 	`select id, name, is_active, cron, next_ts, last_ts, message
-	// 	from barn_entry`,
-	// )
-	// if err != nil {
-	// 	slog.Error("db", "error", err)
-	// 	panic(err)
-	// }
-	// defer stmt.Close()
-
 	slog.Info("started")
 
 	err := scheduler.reload()
@@ -291,10 +271,7 @@ func (scheduler *Scheduler) processEntry() error {
 
 func (scheduler *Scheduler) getEntries() (EntryMap, error) {
 	db := scheduler.db
-	stmt, err := db.Prepare(
-		`select id, name, is_active, cron, next_ts, last_ts, message 
-		from barn_entry`,
-	)
+	stmt, err := db.Prepare(scheduler.query.GetSelectAllQuery())
 	if err != nil {
 		return nil, err
 	}
@@ -308,19 +285,7 @@ func (scheduler *Scheduler) getEntries() (EntryMap, error) {
 	}
 	for rows.Next() {
 		var e Entry = Entry{}
-		// var nextTs, lastTs *string
 		err := rows.Scan(&e.Id, &e.Name, &e.IsActive, &e.Cron, &e.NextTs, &e.LastTs, &e.Message)
-		// if nextTs != nil {
-		// 	// RFC3339     = "2006-01-02T15:04:05Z07:00"
-		// 	// RFC3339Nano = "2006-01-02T15:04:05.999999999Z07:00"
-		// 	// layout := "2006-01-02 15:04:05.999999999+77:00"
-		// 	layout := time.RFC3339
-		// 	nextTs2, err := time.Parse(layout, *nextTs)
-		// 	if err != nil {
-		// 		return nil, err
-		// 	}
-		// 	e.NextTs = &nextTs2
-		// }
 		if err != nil {
 			return nil, err
 		}
@@ -356,7 +321,6 @@ func (scheduler *Scheduler) getEntries() (EntryMap, error) {
 func (scheduler *Scheduler) Add(name string, cron *string, nextTs *time.Time, message string) error {
 	// fake 1
 	// cron := "*/5 * * * * *"
-
 	if cron == nil && nextTs == nil {
 		return fmt.Errorf("invalid cron and/or nextTs	")
 	}
@@ -372,13 +336,8 @@ func (scheduler *Scheduler) Add(name string, cron *string, nextTs *time.Time, me
 	// }
 
 	slog.Info("create the entry", "name", name, "cron", cron, "message", message)
-
 	db := scheduler.db
-	stmt, err := db.Prepare(
-		`insert into barn_entry(name, cron, next_ts, message) 
-		values ($1, $2, $3, $4) 
-		returning id`,
-	)
+	stmt, err := db.Prepare(scheduler.query.GetInsertQuery())
 	if err != nil {
 		return err
 	}
@@ -398,7 +357,7 @@ func (scheduler *Scheduler) Delete(id int) error {
 
 	slog.Info("delete the entry", "id", id)
 	res, err := db.Exec(
-		`delete from barn_entry where id=$1`,
+		scheduler.query.GetDeleteQuery(),
 		id,
 	)
 	if err != nil {
@@ -418,9 +377,7 @@ func (scheduler *Scheduler) DeleteAll() error {
 	db := scheduler.db
 
 	slog.Info("delete all entries")
-	res, err := db.Exec(
-		`delete from barn_entry`,
-	)
+	res, err := db.Exec(scheduler.query.GetDeleteAllQuery())
 	if err != nil {
 		return err
 	}
@@ -437,9 +394,7 @@ func (scheduler *Scheduler) update(entry *Entry) error {
 
 	slog.Info("update the entry", "entry", entry)
 	res, err := db.Exec(
-		`update barn_entry 
-		set is_active=$1, next_ts=$2, last_ts=$3
-		where id=$4`,
+		scheduler.query.GetUpdateQuery(),
 		entry.IsActive, entry.NextTs, entry.LastTs, entry.Id,
 	)
 	if err != nil {
@@ -462,9 +417,7 @@ func (scheduler *Scheduler) deactivate(entry *Entry) error {
 	entry.IsActive = false
 	slog.Info("deactivate the entry", "entry", entry)
 	res, err := db.Exec(
-		`update barn_entry 
-		set is_active=$1
-		where id=$2`,
+		scheduler.query.GetUpdateIsActiveQuery(),
 		false, entry.Id,
 	)
 	if err != nil {

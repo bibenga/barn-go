@@ -10,8 +10,8 @@ type LockQuery struct {
 	lockedByField string
 }
 
-func NewDefaultLockQuery() *LockQuery {
-	return &LockQuery{
+func NewDefaultLockQuery() LockQuery {
+	return LockQuery{
 		tableName:     "barn_lock",
 		nameField:     "name",
 		versionField:  "version",
@@ -108,8 +108,8 @@ type EntryQuery struct {
 	messageField  string
 }
 
-func NewDefaultEntryQuery() *EntryQuery {
-	return &EntryQuery{
+func NewDefaultEntryQuery() EntryQuery {
+	return EntryQuery{
 		tableName:     "barn_entry",
 		idField:       "id",
 		nameField:     "name",
@@ -173,12 +173,12 @@ func (q *EntryQuery) GetInsertQuery() string {
 		values ($1, $2, $3, $4) 
 		returning %s`,
 		q.tableName,
-		q.nameField, q.cronField, q.cronField, q.messageField,
+		q.nameField, q.cronField, q.nextTsField, q.messageField,
 		q.idField,
 	)
 }
 
-func (q *EntryQuery) GetDelete() string {
+func (q *EntryQuery) GetDeleteQuery() string {
 	return fmt.Sprintf(
 		`delete from %s 
 		where %s=$1`,
@@ -187,7 +187,14 @@ func (q *EntryQuery) GetDelete() string {
 	)
 }
 
-func (q *EntryQuery) GetUpdate() string {
+func (q *EntryQuery) GetDeleteAllQuery() string {
+	return fmt.Sprintf(
+		`delete from %s`,
+		q.tableName,
+	)
+}
+
+func (q *EntryQuery) GetUpdateQuery() string {
 	return fmt.Sprintf(
 		`update %s 
 		set %s=$1, %s=$2, %s=$3
@@ -198,7 +205,7 @@ func (q *EntryQuery) GetUpdate() string {
 	)
 }
 
-func (q *EntryQuery) GetUpdateIsActive() string {
+func (q *EntryQuery) GetUpdateIsActiveQuery() string {
 	return fmt.Sprintf(
 		`update %s 
 		set %s=$1

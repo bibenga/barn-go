@@ -19,7 +19,7 @@ type Lock struct {
 type LockManager struct {
 	log           *slog.Logger
 	db            *sql.DB
-	query         *adapter.LockQuery
+	query         adapter.LockQuery
 	hostname      string
 	listener      LockListener
 	lockName      string
