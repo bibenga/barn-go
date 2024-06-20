@@ -123,7 +123,7 @@ func newTx(t *testing.T, readOnly bool) *sql.Tx {
 	return tx
 }
 
-func TestTryLock(t *testing.T) {
+func TestLockAcquire(t *testing.T) {
 	assert := require.New(t)
 
 	db := setup(t)
@@ -134,7 +134,7 @@ func TestTryLock(t *testing.T) {
 	assert.NoError(err)
 
 	manager := NewLockManager(db, &DummyLockListener{})
-	captured, err := manager.tryCapture()
+	captured, err := manager.acquire()
 	assert.NoError(err)
 	assert.True(captured)
 	assert.True(manager.isLocked)

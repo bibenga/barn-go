@@ -3,6 +3,7 @@ package barn
 import (
 	"database/sql"
 	"log/slog"
+	"os"
 	"time"
 
 	"github.com/bibenga/barn-go/internal/adapter"
@@ -12,15 +13,15 @@ import (
 
 type Lock struct {
 	Name     string
-	LockedAt sql.NullTime
-	LockedBy sql.NullString
+	LockedAt *time.Time
+	LockedBy *string
 }
 
 type LockManager struct {
 	log           *slog.Logger
+	hostname      string
 	db            *sql.DB
 	query         adapter.LockQuery
-	hostname      string
 	listener      LockListener
 	lockName      string
 	checkInterval time.Duration
@@ -32,20 +33,26 @@ type LockManager struct {
 }
 
 type LockListener interface {
-	OnCaptured(lockName string)
-	OnReleased(lockName string)
+	OnAcquire(lockName string)
+	OnRelease(lockName string)
 }
 
 func NewLockManager(db *sql.DB, listener LockListener) *LockManager {
-	uuid, _ := uuid.NewRandom()
-	hostname := uuid.String()
+	hostname, err := os.Hostname()
+	if err != nil {
+		slog.Warn("can't get hostname", "error", err)
+		uuid, _ := uuid.NewRandom()
+		hostname = uuid.String()
+	}
+
 	lockName := "barn"
+
 	manager := LockManager{
 		log:           slog.Default().With("lock", lockName, "hostname", hostname),
+		hostname:      hostname,
 		db:            db,
 		query:         adapter.NewDefaultLockQuery(),
 		listener:      listener,
-		hostname:      hostname,
 		lockName:      lockName,
 		checkInterval: 1 * time.Second,
 		expiration:    10 * time.Second,
@@ -99,8 +106,12 @@ func (manager *LockManager) Run() {
 			manager.log.Info("terminate")
 			manager.stopped <- struct{}{}
 			if manager.isLocked {
-				if err := manager.release(); err != nil {
+				if released, err := manager.release(); err != nil {
 					panic(err)
+				} else {
+					if released {
+						manager.onRelease()
+					}
 				}
 			}
 			return
@@ -118,21 +129,20 @@ func (manager *LockManager) check() error {
 			return err
 		} else {
 			if confirmed {
-				manager.log.Info("the lock is still captured")
+				manager.log.Info("the lock is still owned me")
 			} else {
-				manager.log.Warn("the lock was captured unexpectedly")
-				manager.onReleased()
+				manager.log.Warn("the lock was acquired by someone unexpectedly")
+				manager.onRelease()
 			}
 		}
 	} else {
-		if captured, err := manager.tryCapture(); err != nil {
+		if acquired, err := manager.acquire(); err != nil {
 			return err
 		} else {
-			if captured {
-				manager.log.Info("the lock is rotten and is captured")
-				manager.onCaptured()
+			if acquired {
+				manager.log.Info("the lock is rotten and acquired")
+				manager.onAcquire()
 			} else {
-				// manager.log.Info("the lock has been captured")
 				return manager.logState()
 			}
 		}
@@ -186,6 +196,7 @@ func (manager *LockManager) create() error {
 		manager.log.Error("db error", "error", err)
 		return err
 	}
+	manager.log.Debug("sql", "RowsAffected", rowsAffected)
 	if rowsAffected == 1 {
 		manager.log.Info("the lock is created")
 	} else {
@@ -199,7 +210,7 @@ func (manager *LockManager) create() error {
 	return nil
 }
 
-func (manager *LockManager) tryCapture() (bool, error) {
+func (manager *LockManager) acquire() (bool, error) {
 	db := manager.db
 	lockedAt := time.Now().UTC()
 	rottenTs := time.Now().UTC().Add(-manager.expiration)
@@ -217,6 +228,7 @@ func (manager *LockManager) tryCapture() (bool, error) {
 		manager.log.Error("db error", "error", err)
 		return false, err
 	} else {
+		manager.log.Debug("sql", "RowsAffected", rowsAffected)
 		if rowsAffected == 1 {
 			manager.isLocked = true
 			manager.lockedAt = &lockedAt
@@ -242,17 +254,18 @@ func (manager *LockManager) confirm() (bool, error) {
 		manager.log.Error("db error", "error", err)
 		return false, err
 	} else {
+		manager.log.Debug("sql", "RowsAffected", rowsAffected)
 		if rowsAffected == 1 {
+			manager.lockedAt = &lockedAt
+		} else {
 			manager.isLocked = false
 			manager.lockedAt = nil
-		} else {
-			manager.lockedAt = &lockedAt
 		}
 		return manager.isLocked, nil
 	}
 }
 
-func (manager *LockManager) release() error {
+func (manager *LockManager) release() (bool, error) {
 	if manager.isLocked {
 		db := manager.db
 		rottenTs := time.Now().UTC().Add(-manager.expiration)
@@ -262,12 +275,13 @@ func (manager *LockManager) release() error {
 		)
 		if err != nil {
 			manager.log.Error("db error", "error", err)
-			return err
+			return false, err
 		}
 		if rowsAffected, err := res.RowsAffected(); err != nil {
 			manager.log.Error("db error", "error", err)
-			return err
+			return false, err
 		} else {
+			manager.log.Debug("sql", "RowsAffected", rowsAffected)
 			manager.isLocked = false
 			manager.lockedAt = nil
 			if rowsAffected == 1 {
@@ -275,11 +289,12 @@ func (manager *LockManager) release() error {
 			} else {
 				manager.log.Info("the lock was created by someone")
 			}
+			return rowsAffected == 1, nil
 		}
 	} else {
-		manager.log.Info("the lock was created by someone")
+		manager.log.Info("the lock is not our")
 	}
-	return nil
+	return false, nil
 }
 
 func (manager *LockManager) logState() error {
@@ -297,7 +312,18 @@ func (manager *LockManager) logState() error {
 		manager.log.Info("the lock is not found")
 		return nil
 	case nil:
-		manager.log.Info("the lock is found", "LockedBy", dbLock.LockedBy.String, "LockedAt", dbLock.LockedAt.Time)
+		lockedAt := slog.Any("LockedAt", nil)
+		if dbLock.LockedAt != nil {
+			// lockedAt = slog.Any("LockedAt", *dbLock.LockedAt)
+			lockedAt.Value = slog.TimeValue(*dbLock.LockedAt)
+		}
+		lockedBy := slog.Any("LockedBy", nil)
+		if dbLock.LockedBy != nil {
+			// lockedBy = slog.Any("LockedBy", *dbLock.LockedBy)
+			lockedBy.Value = slog.StringValue(*dbLock.LockedBy)
+		}
+		// manager.log.Info("the lock is owned by someone", "LockedAt", dbLock.LockedAt, "LockedBy", dbLock.LockedBy)
+		manager.log.Info("the lock is captured", lockedAt, lockedBy)
 		return nil
 	default:
 		manager.log.Error("db error", "error", err)
@@ -305,21 +331,21 @@ func (manager *LockManager) logState() error {
 	}
 }
 
-func (manager *LockManager) onCaptured() {
-	manager.listener.OnCaptured(manager.lockName)
+func (manager *LockManager) onAcquire() {
+	manager.listener.OnAcquire(manager.lockName)
 }
 
-func (manager *LockManager) onReleased() {
-	manager.listener.OnReleased(manager.lockName)
+func (manager *LockManager) onRelease() {
+	manager.listener.OnRelease(manager.lockName)
 }
 
 type DummyLockListener struct{}
 
-func (l *DummyLockListener) OnCaptured(lockName string) {
-	slog.Info("DUMMY: the lock is captured", "lock", lockName)
+func (l *DummyLockListener) OnAcquire(lockName string) {
+	slog.Info("DUMMY: the lock is acquired", "lock", lockName)
 }
 
-func (l *DummyLockListener) OnReleased(lockName string) {
+func (l *DummyLockListener) OnRelease(lockName string) {
 	slog.Info("DUMMY: the lock is released", "lock", lockName)
 }
 

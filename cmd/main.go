@@ -50,6 +50,7 @@ func main() {
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds | log.Lshortfile | log.Lmsgprefix)
 	// log.SetFlags(log.Ltime | log.Lmicroseconds)
 	log.SetPrefix("")
+	slog.SetLogLoggerLevel(slog.LevelDebug)
 
 	db := initDb(false)
 	defer db.Close()
@@ -82,7 +83,7 @@ func main() {
 		slog.Error("db error", "error", err)
 		panic(err)
 	}
-	go scheduler.Run()
+	// go scheduler.Run()
 
 	manager := barn.NewLockManager(db, &barn.DummyLockListener{})
 	err = manager.InitializeDB()
@@ -90,7 +91,7 @@ func main() {
 		slog.Error("db error", "error", err)
 		panic(err)
 	}
-	// go manager.Run()
+	go manager.Run()
 
 	osSignal := make(chan os.Signal, 1)
 	signal.Notify(osSignal, os.Interrupt)
