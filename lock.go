@@ -34,8 +34,8 @@ type LockManager struct {
 }
 
 type LockListener interface {
-	OnAcquire(lockName string)
-	OnRelease(lockName string)
+	OnLock(lockName string)
+	OnUnlock(lockName string)
 }
 
 func NewLockManager(db *sql.DB, listener LockListener) *LockManager {
@@ -111,7 +111,7 @@ func (manager *LockManager) Run() {
 					panic(err)
 				} else {
 					if released {
-						manager.onRelease()
+						manager.onUnlock()
 					}
 				}
 			}
@@ -133,7 +133,7 @@ func (manager *LockManager) check() error {
 				manager.log.Info("the lock is still owned me")
 			} else {
 				manager.log.Warn("the lock has been acquired by someone unexpectedly")
-				manager.onRelease()
+				manager.onUnlock()
 			}
 		}
 	} else {
@@ -142,7 +142,7 @@ func (manager *LockManager) check() error {
 		} else {
 			if acquired {
 				manager.log.Info("the lock is rotten and acquired")
-				manager.onAcquire()
+				manager.onLock()
 			} else {
 				return manager.logState()
 			}
@@ -358,21 +358,21 @@ func (manager *LockManager) logState() error {
 	}
 }
 
-func (manager *LockManager) onAcquire() {
-	manager.listener.OnAcquire(manager.lockName)
+func (manager *LockManager) onLock() {
+	manager.listener.OnLock(manager.lockName)
 }
 
-func (manager *LockManager) onRelease() {
-	manager.listener.OnRelease(manager.lockName)
+func (manager *LockManager) onUnlock() {
+	manager.listener.OnUnlock(manager.lockName)
 }
 
 type DummyLockListener struct{}
 
-func (l *DummyLockListener) OnAcquire(lockName string) {
+func (l *DummyLockListener) OnLock(lockName string) {
 	slog.Info("DUMMY: the lock is acquired", "lock", lockName)
 }
 
-func (l *DummyLockListener) OnRelease(lockName string) {
+func (l *DummyLockListener) OnUnlock(lockName string) {
 	slog.Info("DUMMY: the lock is released", "lock", lockName)
 }
 

@@ -5,7 +5,6 @@ import "fmt"
 type LockQuery struct {
 	tableName     string
 	nameField     string
-	versionField  string
 	lockedAtField string
 	lockedByField string
 }
@@ -14,7 +13,6 @@ func NewDefaultLockQuery() LockQuery {
 	return LockQuery{
 		tableName:     "barn_lock",
 		nameField:     "name",
-		versionField:  "version",
 		lockedAtField: "locked_at",
 		lockedByField: "locked_by",
 	}
