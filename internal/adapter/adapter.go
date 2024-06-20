@@ -2,100 +2,115 @@ package adapter
 
 import "fmt"
 
-type LockQuery struct {
+type LockQueryConfig struct {
 	tableName     string
 	nameField     string
 	lockedAtField string
 	lockedByField string
 }
 
-func NewDefaultLockQuery() LockQuery {
+var defaultLockQueryConfig = LockQueryConfig{
+	tableName:     "barn_lock",
+	nameField:     "name",
+	lockedAtField: "locked_at",
+	lockedByField: "locked_by",
+}
+
+type LockQuery struct {
+	createTableQuery string
+	createQuery      string
+	selectQuery      string
+	lockQuery        string
+	confirmQuery     string
+	unlockQuery      string
+}
+
+func NewLockQuery(c LockQueryConfig) LockQuery {
 	return LockQuery{
-		tableName:     "barn_lock",
-		nameField:     "name",
-		lockedAtField: "locked_at",
-		lockedByField: "locked_by",
+		createTableQuery: fmt.Sprintf(
+			`CREATE TABLE IF NOT EXISTS %s  (
+				%s VARCHAR NOT NULL,
+				%s TIMESTAMP WITH TIME ZONE,
+				%s VARCHAR,
+				PRIMARY KEY (%s)
+			)`,
+			c.tableName,
+			c.nameField,
+			c.lockedAtField,
+			c.lockedByField,
+			c.nameField,
+		),
+		createQuery: fmt.Sprintf(
+			`insert into %s(%s) 
+			values ($1) 
+			on conflict (%s) do nothing`,
+			c.tableName, c.nameField,
+			c.nameField,
+		),
+		selectQuery: fmt.Sprintf(
+			`select %s, %s 
+			from %s 
+			where %s = $1`,
+			c.lockedAtField, c.lockedByField,
+			c.tableName,
+			c.nameField,
+		),
+		lockQuery: fmt.Sprintf(
+			`update %s 
+			set %s = $1, %s = $2 
+			where %s = $3 and (%s is null or %s < $4)`,
+			c.tableName,
+			c.lockedByField, c.lockedAtField,
+			c.nameField, c.lockedAtField, c.lockedAtField,
+		),
+		confirmQuery: fmt.Sprintf(
+			`update %s 
+			set %s = $1, %s = $2 
+			where %s = $3 and %s = $4 and %s > $5`,
+			c.tableName,
+			c.lockedByField, c.lockedAtField,
+			c.nameField, c.lockedByField, c.lockedAtField,
+		),
+		unlockQuery: fmt.Sprintf(
+			`update %s 
+			set %s = null, %s = null
+			where %s = $1 and %s = $2 and (%s is null or %s > $3)`,
+			c.tableName,
+			c.lockedByField, c.lockedAtField,
+			c.nameField, c.lockedByField, c.lockedAtField, c.lockedAtField,
+		),
 	}
 }
 
+func NewDefaultLockQuery() LockQuery {
+	return NewLockQuery(defaultLockQueryConfig)
+}
+
+func (q *LockQuery) GetCreateTableQuery() string {
+	return q.createTableQuery
+}
+
 func (q *LockQuery) GetCreateQuery() string {
-	return fmt.Sprintf(
-		`CREATE TABLE IF NOT EXISTS %s  (
-			%s VARCHAR NOT NULL,
-			%s TIMESTAMP WITH TIME ZONE,
-			%s VARCHAR,
-			PRIMARY KEY (%s)
-		)`,
-		q.tableName,
-		q.nameField,
-		q.lockedAtField,
-		q.lockedByField,
-		q.nameField,
-	)
-}
-
-func (q *LockQuery) GetIsExistQuery() string {
-	return fmt.Sprintf(
-		`select 1 from %s where name = $1 limit 1`,
-		q.tableName,
-	)
-}
-
-func (q *LockQuery) GetInsertQuery() string {
-	return fmt.Sprintf(
-		`insert into %s(%s) 
-		values ($1) 
-		on conflict (%s) do nothing`,
-		q.tableName, q.nameField,
-		q.nameField,
-	)
+	return q.createQuery
 }
 
 func (q *LockQuery) GetSelectQuery() string {
-	return fmt.Sprintf(
-		`select %s, %s 
-		from %s 
-		where %s = $1`,
-		q.lockedAtField, q.lockedByField,
-		q.tableName,
-		q.nameField,
-	)
+	return q.selectQuery
 }
 
 func (q *LockQuery) GetLockQuery() string {
-	return fmt.Sprintf(
-		`update %s 
-		set %s = $1, %s = $2 
-		where %s = $3 and (%s is null or %s < $4)`,
-		q.tableName,
-		q.lockedByField, q.lockedAtField,
-		q.nameField, q.lockedAtField, q.lockedAtField,
-	)
+	return q.lockQuery
 }
 
 func (q *LockQuery) GetConfirmQuery() string {
-	return fmt.Sprintf(
-		`update %s 
-		set %s = $1, %s = $2 
-		where %s = $3 and %s = $4 and %s > $5`,
-		q.tableName,
-		q.lockedByField, q.lockedAtField,
-		q.nameField, q.lockedByField, q.lockedAtField,
-	)
+	return q.confirmQuery
 }
 
 func (q *LockQuery) GetUnlockQuery() string {
-	return fmt.Sprintf(
-		`update %s 
-		set %s = null, %s = null
-		where %s = $1 and %s = $2 and (%s is null or %s > $3)`,
-		q.tableName,
-		q.lockedByField, q.lockedAtField,
-		q.nameField, q.lockedByField, q.lockedAtField, q.lockedAtField,
-	)
+	return q.unlockQuery
 }
 
-type EntryQuery struct {
+type EntryQueryConfig struct {
 	tableName     string
 	idField       string
 	nameField     string
@@ -106,110 +121,136 @@ type EntryQuery struct {
 	messageField  string
 }
 
-func NewDefaultEntryQuery() EntryQuery {
+var defaultEntryQueryConfig = EntryQueryConfig{
+	tableName:     "barn_entry",
+	idField:       "id",
+	nameField:     "name",
+	isActiveField: "is_active",
+	cronField:     "cron",
+	nextTsField:   "next_ts",
+	lastTsField:   "last_ts",
+	messageField:  "message",
+}
+
+type EntryQuery struct {
+	createTableQuery    string
+	selectAllQuery      string
+	selectActiveQuery   string
+	insertQuery         string
+	deleteQuery         string
+	deleteAllQuery      string
+	updateQuery         string
+	updateIsActiveQuery string
+}
+
+func NewEntryQuery(c EntryQueryConfig) EntryQuery {
 	return EntryQuery{
-		tableName:     "barn_entry",
-		idField:       "id",
-		nameField:     "name",
-		isActiveField: "is_active",
-		cronField:     "cron",
-		nextTsField:   "next_ts",
-		lastTsField:   "last_ts",
-		messageField:  "message",
+		createTableQuery: fmt.Sprintf(
+			`CREATE TABLE IF NOT EXISTS %s (
+				%s SERIAL NOT NULL, 
+				%s VARCHAR NOT NULL, 
+				%s BOOLEAN DEFAULT TRUE NOT NULL, 
+				%s VARCHAR, 
+				%s TIMESTAMP WITH TIME ZONE, 
+				%s TIMESTAMP WITH TIME ZONE, 
+				%s JSONB, 
+				PRIMARY KEY (%s),
+				UNIQUE (%s)
+			)`,
+			c.tableName,
+			c.idField,
+			c.nameField,
+			c.isActiveField,
+			c.cronField,
+			c.nextTsField,
+			c.lastTsField,
+			c.messageField,
+			c.idField,
+			c.nameField,
+		),
+		selectAllQuery: fmt.Sprintf(
+			`select %s, %s, %s, %s, %s, %s, %s 
+			from %s`,
+			c.idField, c.nameField, c.isActiveField, c.cronField, c.nextTsField, c.lastTsField, c.messageField,
+			c.tableName,
+		),
+		selectActiveQuery: fmt.Sprintf(
+			`select %s, %s, %s, %s, %s, %s, %s 
+			from %s
+			where %s`,
+			c.idField, c.nameField, c.isActiveField, c.cronField, c.nextTsField, c.lastTsField, c.messageField,
+			c.tableName,
+			c.isActiveField,
+		),
+		insertQuery: fmt.Sprintf(
+			`insert into %s(%s, %s, %s, %s) 
+			values ($1, $2, $3, $4) 
+			returning %s`,
+			c.tableName,
+			c.nameField, c.cronField, c.nextTsField, c.messageField,
+			c.idField,
+		),
+		deleteQuery: fmt.Sprintf(
+			`delete from %s 
+			where %s=$1`,
+			c.tableName,
+			c.idField,
+		),
+		deleteAllQuery: fmt.Sprintf(
+			`delete from %s`,
+			c.tableName,
+		),
+		updateQuery: fmt.Sprintf(
+			`update %s 
+			set %s=$1, %s=$2, %s=$3
+			where %s=$4`,
+			c.tableName,
+			c.isActiveField, c.nextTsField, c.lastTsField,
+			c.idField,
+		),
+		updateIsActiveQuery: fmt.Sprintf(
+			`update %s 
+			set %s=$1
+			where %s=$2`,
+			c.tableName,
+			c.isActiveField,
+			c.idField,
+		),
 	}
 }
 
-func (q *EntryQuery) GetCreateQuery() string {
-	return fmt.Sprintf(
-		`CREATE TABLE IF NOT EXISTS %s (
-			%s SERIAL NOT NULL, 
-			%s VARCHAR NOT NULL, 
-			%s BOOLEAN DEFAULT TRUE NOT NULL, 
-			%s VARCHAR, 
-			%s TIMESTAMP WITH TIME ZONE, 
-			%s TIMESTAMP WITH TIME ZONE, 
-			%s JSONB, 
-			PRIMARY KEY (%s),
-			UNIQUE (%s)
-		)`,
-		q.tableName,
-		q.idField,
-		q.nameField,
-		q.isActiveField,
-		q.cronField,
-		q.nextTsField,
-		q.lastTsField,
-		q.messageField,
-		q.idField,
-		q.nameField,
-	)
+func NewDefaultEntryQuery() EntryQuery {
+	return NewEntryQuery(defaultEntryQueryConfig)
+}
+
+func (q *EntryQuery) GetCreateTableQuery() string {
+	return q.createTableQuery
 }
 
 func (q *EntryQuery) GetSelectAllQuery() string {
-	return fmt.Sprintf(
-		`select %s, %s, %s, %s, %s, %s, %s 
-		from %s`,
-		q.idField, q.nameField, q.isActiveField, q.cronField, q.nextTsField, q.lastTsField, q.messageField,
-		q.tableName,
-	)
+	return q.selectAllQuery
 }
 
 func (q *EntryQuery) GetSelectActiveQuery() string {
-	return fmt.Sprintf(
-		`select %s, %s, %s, %s, %s, %s, %s 
-		from %s
-		where %s`,
-		q.idField, q.nameField, q.isActiveField, q.cronField, q.nextTsField, q.lastTsField, q.messageField,
-		q.tableName,
-		q.isActiveField,
-	)
+	return q.selectActiveQuery
 }
 
 func (q *EntryQuery) GetInsertQuery() string {
-	return fmt.Sprintf(
-		`insert into %s(%s, %s, %s, %s) 
-		values ($1, $2, $3, $4) 
-		returning %s`,
-		q.tableName,
-		q.nameField, q.cronField, q.nextTsField, q.messageField,
-		q.idField,
-	)
+	return q.insertQuery
 }
 
 func (q *EntryQuery) GetDeleteQuery() string {
-	return fmt.Sprintf(
-		`delete from %s 
-		where %s=$1`,
-		q.tableName,
-		q.idField,
-	)
+	return q.deleteQuery
 }
 
 func (q *EntryQuery) GetDeleteAllQuery() string {
-	return fmt.Sprintf(
-		`delete from %s`,
-		q.tableName,
-	)
+	return q.deleteAllQuery
 }
 
 func (q *EntryQuery) GetUpdateQuery() string {
-	return fmt.Sprintf(
-		`update %s 
-		set %s=$1, %s=$2, %s=$3
-		where %s=$4`,
-		q.tableName,
-		q.isActiveField, q.nextTsField, q.lastTsField,
-		q.idField,
-	)
+	return q.updateQuery
 }
 
 func (q *EntryQuery) GetUpdateIsActiveQuery() string {
-	return fmt.Sprintf(
-		`update %s 
-		set %s=$1
-		where %s=$2`,
-		q.tableName,
-		q.isActiveField,
-		q.idField,
-	)
+	return q.updateIsActiveQuery
 }

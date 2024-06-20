@@ -56,7 +56,7 @@ func main() {
 	defer db.Close()
 
 	scheduler := barn.NewScheduler(db)
-	err := scheduler.InitializeDB()
+	err := scheduler.CreateTable()
 	if err != nil {
 		slog.Error("db error", "error", err)
 		panic(err)
@@ -83,15 +83,15 @@ func main() {
 		slog.Error("db error", "error", err)
 		panic(err)
 	}
-	// go scheduler.Run()
+	go scheduler.Run()
 
 	manager := barn.NewLockManager(db, &barn.DummyLockListener{})
-	err = manager.InitializeDB()
+	err = manager.CreateTable()
 	if err != nil {
 		slog.Error("db error", "error", err)
 		panic(err)
 	}
-	go manager.Run()
+	// go manager.Run()
 
 	osSignal := make(chan os.Signal, 1)
 	signal.Notify(osSignal, os.Interrupt)

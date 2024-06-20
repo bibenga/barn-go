@@ -84,11 +84,11 @@ func setup(t *testing.T) *sql.DB {
 	assert.NoError(db.Ping())
 
 	lockQuery := adapter.NewDefaultLockQuery()
-	_, err = db.Exec(lockQuery.GetCreateQuery())
+	_, err = db.Exec(lockQuery.GetCreateTableQuery())
 	assert.NoError(err)
 
 	entryQuery := adapter.NewDefaultEntryQuery()
-	_, err = db.Exec(entryQuery.GetCreateQuery())
+	_, err = db.Exec(entryQuery.GetCreateTableQuery())
 	assert.NoError(err)
 
 	t.Cleanup(func() {

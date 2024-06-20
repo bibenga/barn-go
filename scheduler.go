@@ -85,10 +85,10 @@ func NewScheduler(db *sql.DB) *Scheduler {
 	return &scheduler
 }
 
-func (scheduler *Scheduler) InitializeDB() error {
+func (scheduler *Scheduler) CreateTable() error {
 	db := scheduler.db
 	scheduler.log.Info("create table")
-	_, err := db.Exec(scheduler.query.GetCreateQuery())
+	_, err := db.Exec(scheduler.query.GetCreateTableQuery())
 	return err
 }
 

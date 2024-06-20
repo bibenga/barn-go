@@ -64,10 +64,10 @@ func NewLockManager(db *sql.DB, listener LockListener) *LockManager {
 	return &manager
 }
 
-func (manager *LockManager) InitializeDB() error {
+func (manager *LockManager) CreateTable() error {
 	db := manager.db
 	manager.log.Warn("create lock table")
-	_, err := db.Exec(manager.query.GetCreateQuery())
+	_, err := db.Exec(manager.query.GetCreateTableQuery())
 	return err
 }
 
@@ -81,16 +81,8 @@ func (manager *LockManager) Stop() {
 }
 
 func (manager *LockManager) Run() {
-	if isLockExist, err := manager.isLockExist(); err != nil {
+	if err := manager.create(); err != nil {
 		panic(err)
-	} else {
-		if isLockExist {
-			manager.log.Info("the lock exists")
-		} else {
-			if err := manager.create(); err != nil {
-				panic(err)
-			}
-		}
 	}
 
 	if err := manager.check(); err != nil {
@@ -151,29 +143,6 @@ func (manager *LockManager) check() error {
 	return nil
 }
 
-func (manager *LockManager) isLockExist() (bool, error) {
-	db := manager.db
-	stmt, err := db.Prepare(manager.query.GetIsExistQuery())
-	if err != nil {
-		manager.log.Error("cannot prepare query", "error", err)
-		return false, err
-	}
-	defer stmt.Close()
-	var count int
-	row := stmt.QueryRow(manager.lockName)
-	switch err := row.Scan(&count); err {
-	case sql.ErrNoRows:
-		manager.log.Info("the lock is not exist")
-		return false, nil
-	case nil:
-		manager.log.Info("the lock is exist")
-		return true, nil
-	default:
-		manager.log.Error("db error", "error", err)
-		return false, err
-	}
-}
-
 func (manager *LockManager) create() error {
 	db := manager.db
 	manager.log.Info("create the lock")
@@ -185,7 +154,7 @@ func (manager *LockManager) create() error {
 	}
 
 	res, err := tx.Exec(
-		manager.query.GetInsertQuery(),
+		manager.query.GetCreateQuery(),
 		manager.lockName,
 	)
 	if err != nil {
