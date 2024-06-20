@@ -131,7 +131,7 @@ func (manager *LockManager) check() error {
 			if confirmed {
 				manager.log.Info("the lock is still owned me")
 			} else {
-				manager.log.Warn("the lock was acquired by someone unexpectedly")
+				manager.log.Warn("the lock has been acquired by someone unexpectedly")
 				manager.onRelease()
 			}
 		}
