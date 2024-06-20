@@ -19,45 +19,48 @@ type Lock struct {
 }
 
 type LockManager struct {
-	log           *slog.Logger
-	hostname      string
-	db            *sql.DB
-	query         adapter.LockQuery
-	listener      LockListener
-	lockName      string
-	checkInterval time.Duration
-	expiration    time.Duration
-	isLocked      bool
-	lockedAt      *time.Time
-	stop          chan struct{}
-	stopped       chan struct{}
+	log      *slog.Logger
+	hostname string
+	db       *sql.DB
+	query    adapter.LockQuery
+	listener LockListener
+	lockName string
+	hearbeat time.Duration
+	ttl      time.Duration
+	locked   bool
+	lockedAt *time.Time
+	stop     chan struct{}
+	stopped  chan struct{}
 }
 
 type LockListener interface {
-	OnLock(lockName string)
-	OnUnlock(lockName string)
+	OnLock()
+	OnUnlock()
 }
 
 func NewLockManager(db *sql.DB, lockName string, listener LockListener) *LockManager {
 	hostname, err := os.Hostname()
 	if err != nil {
 		slog.Warn("can't get hostname", "error", err)
-		uuid, _ := uuid.NewRandom()
+		uuid, err := uuid.NewRandom()
+		if err != nil {
+			panic(err)
+		}
 		hostname = uuid.String()
 	}
 
 	manager := LockManager{
-		log:           slog.Default().With("lock", lockName, "hostname", hostname),
-		hostname:      hostname,
-		db:            db,
-		query:         adapter.NewDefaultLockQuery(),
-		listener:      listener,
-		lockName:      lockName,
-		checkInterval: 1 * time.Second,
-		expiration:    10 * time.Second,
-		isLocked:      false,
-		stop:          make(chan struct{}),
-		stopped:       make(chan struct{}),
+		log:      slog.Default().With("lock", lockName, "hostname", hostname),
+		hostname: hostname,
+		db:       db,
+		query:    adapter.NewDefaultLockQuery(),
+		listener: listener,
+		lockName: lockName,
+		hearbeat: 1 * time.Second,
+		ttl:      10 * time.Second,
+		locked:   false,
+		stop:     make(chan struct{}),
+		stopped:  make(chan struct{}),
 	}
 	return &manager
 }
@@ -87,7 +90,7 @@ func (manager *LockManager) Run() {
 		panic(err)
 	}
 
-	check := time.NewTicker(manager.checkInterval)
+	check := time.NewTicker(manager.hearbeat)
 	defer check.Stop()
 
 	manager.log.Info("started")
@@ -96,7 +99,7 @@ func (manager *LockManager) Run() {
 		case <-manager.stop:
 			manager.log.Info("terminate")
 			manager.stopped <- struct{}{}
-			if manager.isLocked {
+			if manager.locked {
 				if released, err := manager.unlock(); err != nil {
 					panic(err)
 				} else {
@@ -115,7 +118,7 @@ func (manager *LockManager) Run() {
 }
 
 func (manager *LockManager) check() error {
-	if manager.isLocked {
+	if manager.locked {
 		if confirmed, err := manager.confirm(); err != nil {
 			return err
 		} else {
@@ -145,13 +148,7 @@ func (manager *LockManager) create() error {
 	db := manager.db
 	manager.log.Info("create the lock")
 
-	tx, err := db.Begin()
-	if err != nil {
-		manager.log.Error("db error", "error", err)
-		return err
-	}
-
-	res, err := tx.Exec(
+	res, err := db.Exec(
 		manager.query.GetInsertQuery(),
 		manager.lockName,
 	)
@@ -170,18 +167,13 @@ func (manager *LockManager) create() error {
 	} else {
 		manager.log.Info("the lock was created by someone")
 	}
-
-	if err := tx.Commit(); err != nil {
-		manager.log.Error("db error", "error", err)
-		return err
-	}
 	return nil
 }
 
 func (manager *LockManager) tryLock() (bool, error) {
 	db := manager.db
 	lockedAt := time.Now().UTC()
-	rottenTs := time.Now().UTC().Add(-manager.expiration)
+	rottenTs := lockedAt.Add(-manager.ttl)
 	// manager.log.Info("try capture lock", "rottenTs", rottenTs)
 	res, err := db.Exec(
 		manager.query.GetLockQuery(),
@@ -198,10 +190,10 @@ func (manager *LockManager) tryLock() (bool, error) {
 	} else {
 		manager.log.Debug("sql", "RowsAffected", rowsAffected)
 		if rowsAffected == 1 {
-			manager.isLocked = true
+			manager.locked = true
 			manager.lockedAt = &lockedAt
 		}
-		return manager.isLocked, nil
+		return manager.locked, nil
 	}
 }
 
@@ -234,7 +226,7 @@ func (manager *LockManager) lock(ctx context.Context) (bool, error) {
 func (manager *LockManager) confirm() (bool, error) {
 	db := manager.db
 	lockedAt := time.Now().UTC()
-	rottenTs := time.Now().UTC().Add(-manager.expiration)
+	rottenTs := time.Now().UTC().Add(-manager.ttl)
 	res, err := db.Exec(
 		manager.query.GetConfirmQuery(),
 		manager.hostname, lockedAt,
@@ -252,17 +244,17 @@ func (manager *LockManager) confirm() (bool, error) {
 		if rowsAffected == 1 {
 			manager.lockedAt = &lockedAt
 		} else {
-			manager.isLocked = false
+			manager.locked = false
 			manager.lockedAt = nil
 		}
-		return manager.isLocked, nil
+		return manager.locked, nil
 	}
 }
 
 func (manager *LockManager) unlock() (bool, error) {
-	if manager.isLocked {
+	if manager.locked {
 		db := manager.db
-		rottenTs := time.Now().UTC().Add(-manager.expiration)
+		rottenTs := time.Now().UTC().Add(-manager.ttl)
 		res, err := db.Exec(
 			manager.query.GetUnlockQuery(),
 			manager.lockName, manager.hostname, rottenTs,
@@ -276,7 +268,7 @@ func (manager *LockManager) unlock() (bool, error) {
 			return false, err
 		} else {
 			manager.log.Debug("sql", "RowsAffected", rowsAffected)
-			manager.isLocked = false
+			manager.locked = false
 			manager.lockedAt = nil
 			if rowsAffected == 1 {
 				manager.log.Info("the lock is released")
@@ -326,21 +318,21 @@ func (manager *LockManager) logState() error {
 }
 
 func (manager *LockManager) onLock() {
-	manager.listener.OnLock(manager.lockName)
+	manager.listener.OnLock()
 }
 
 func (manager *LockManager) onUnlock() {
-	manager.listener.OnUnlock(manager.lockName)
+	manager.listener.OnUnlock()
 }
 
 type DummyLockListener struct{}
 
-func (l *DummyLockListener) OnLock(lockName string) {
-	slog.Info("DUMMY: the lock is acquired", "lock", lockName)
+func (l *DummyLockListener) OnLock() {
+	slog.Info("DUMMY: the lock is acquired")
 }
 
-func (l *DummyLockListener) OnUnlock(lockName string) {
-	slog.Info("DUMMY: the lock is released", "lock", lockName)
+func (l *DummyLockListener) OnUnlock() {
+	slog.Info("DUMMY: the lock is released")
 }
 
 var _ LockListener = &DummyLockListener{}

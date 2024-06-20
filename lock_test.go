@@ -137,7 +137,7 @@ func TestLockAcquire(t *testing.T) {
 	captured, err := manager.tryLock()
 	assert.NoError(err)
 	assert.True(captured)
-	assert.True(manager.isLocked)
+	assert.True(manager.locked)
 	assert.NotNil(manager.lockedAt)
 
 	row := db.QueryRow("select locked_at, locked_by from barn_lock where name='barn'")

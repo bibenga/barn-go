@@ -85,13 +85,13 @@ func main() {
 	}
 	// go scheduler.Run()
 
-	manager := barn.NewLockManager(db, "barn", &barn.DummyLockListener{})
-	err = manager.CreateTable()
+	lock := barn.NewLockManager(db, "barn", &barn.DummyLockListener{})
+	err = lock.CreateTable()
 	if err != nil {
 		slog.Error("db error", "error", err)
 		panic(err)
 	}
-	// go manager.Run()
+	go lock.Run()
 
 	osSignal := make(chan os.Signal, 1)
 	signal.Notify(osSignal, os.Interrupt)
