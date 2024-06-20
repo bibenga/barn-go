@@ -134,7 +134,7 @@ func TestLockAcquire(t *testing.T) {
 	assert.NoError(err)
 
 	manager := NewLockManager(db, &DummyLockListener{})
-	captured, err := manager.acquire()
+	captured, err := manager.tryLock()
 	assert.NoError(err)
 	assert.True(captured)
 	assert.True(manager.isLocked)

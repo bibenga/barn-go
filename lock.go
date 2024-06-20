@@ -1,6 +1,7 @@
 package barn
 
 import (
+	"context"
 	"database/sql"
 	"log/slog"
 	"os"
@@ -106,7 +107,7 @@ func (manager *LockManager) Run() {
 			manager.log.Info("terminate")
 			manager.stopped <- struct{}{}
 			if manager.isLocked {
-				if released, err := manager.release(); err != nil {
+				if released, err := manager.unlock(); err != nil {
 					panic(err)
 				} else {
 					if released {
@@ -136,7 +137,7 @@ func (manager *LockManager) check() error {
 			}
 		}
 	} else {
-		if acquired, err := manager.acquire(); err != nil {
+		if acquired, err := manager.tryLock(); err != nil {
 			return err
 		} else {
 			if acquired {
@@ -210,7 +211,7 @@ func (manager *LockManager) create() error {
 	return nil
 }
 
-func (manager *LockManager) acquire() (bool, error) {
+func (manager *LockManager) tryLock() (bool, error) {
 	db := manager.db
 	lockedAt := time.Now().UTC()
 	rottenTs := time.Now().UTC().Add(-manager.expiration)
@@ -234,6 +235,32 @@ func (manager *LockManager) acquire() (bool, error) {
 			manager.lockedAt = &lockedAt
 		}
 		return manager.isLocked, nil
+	}
+}
+
+func (manager *LockManager) lock(ctx context.Context) (bool, error) {
+	manager.log.Info("lock")
+	if locked, err := manager.tryLock(); err != nil {
+		return false, err
+	} else {
+		if locked {
+			return locked, nil
+		}
+	}
+
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return false, nil
+		case <-ticker.C:
+			if locked, err := manager.tryLock(); err != nil {
+				return false, err
+			} else {
+				return locked, nil
+			}
+		}
 	}
 }
 
@@ -265,7 +292,7 @@ func (manager *LockManager) confirm() (bool, error) {
 	}
 }
 
-func (manager *LockManager) release() (bool, error) {
+func (manager *LockManager) unlock() (bool, error) {
 	if manager.isLocked {
 		db := manager.db
 		rottenTs := time.Now().UTC().Add(-manager.expiration)
