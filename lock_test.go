@@ -6,12 +6,16 @@ import (
 	"fmt"
 	"log/slog"
 	"testing"
+	"time"
 
+	"github.com/bibenga/barn-go/internal/adapter"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/jackc/pgx/v5/tracelog"
 	pgxslog "github.com/mcosta74/pgx-slog"
 	"github.com/stretchr/testify/require"
+
+	_ "github.com/mattn/go-sqlite3"
 )
 
 const driver = "pgx"
@@ -43,6 +47,14 @@ func newConnection(dsn string) (*sql.DB, error) {
 	return db, nil
 }
 
+func newSqliteConnection() (*sql.DB, error) {
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		return nil, err
+	}
+	return db, nil
+}
+
 func newTestConnection() (*sql.DB, error) {
 	db, err := newConnection(dsn)
 	if err != nil {
@@ -66,9 +78,18 @@ func setup(t *testing.T) *sql.DB {
 	assert := require.New(t)
 
 	db, err := newTestConnection()
+	// db, err := newSqliteConnection()
 	assert.NoError(err)
 	assert.NotNil(db)
 	assert.NoError(db.Ping())
+
+	lockQuery := adapter.NewDefaultLockQuery()
+	_, err = db.Exec(lockQuery.GetCreateQuery())
+	assert.NoError(err)
+
+	entryQuery := adapter.NewDefaultEntryQuery()
+	_, err = db.Exec(entryQuery.GetCreateQuery())
+	assert.NoError(err)
 
 	t.Cleanup(func() {
 		t.Helper()
@@ -102,18 +123,33 @@ func newTx(t *testing.T, readOnly bool) *sql.Tx {
 	return tx
 }
 
-func TestDb(t *testing.T) {
+func TestTryLock(t *testing.T) {
 	assert := require.New(t)
 
 	db := setup(t)
 
-	row := db.QueryRow("select 1,2")
+	_, err := db.Exec(`insert into barn_lock (name) values ('barn')`)
+	assert.NoError(err)
+	_, err = db.Exec(`insert into barn_lock (name) values ('unnecessary')`)
+	assert.NoError(err)
+
+	manager := NewLockManager(db, &DummyLockListener{})
+	captured, err := manager.tryCapture()
+	assert.NoError(err)
+	assert.True(captured)
+	assert.True(manager.isLocked)
+	assert.NotNil(manager.lockedAt)
+
+	row := db.QueryRow("select locked_at, locked_by from barn_lock where name='barn'")
 	assert.NoError(row.Err())
 	assert.NotNil(row)
-	var v1, v2 int
-	assert.NoError(row.Scan(&v1, &v2))
-	assert.Equal(v1, 1)
-	assert.Equal(v2, 2)
+	var locked_at *time.Time
+	var locked_by *string
+	assert.NoError(row.Scan(&locked_at, &locked_by))
+	assert.NotNil(locked_at)
+	assert.Equal(manager.lockedAt.Truncate(time.Millisecond), locked_at.In(time.UTC).Truncate(time.Millisecond))
+	assert.NotNil(locked_by)
+	assert.Equal(manager.hostname, *locked_by)
 }
 
 func TestTx(t *testing.T) {

@@ -45,15 +45,14 @@ func initDb(debug bool) *sql.DB {
 }
 
 func main() {
+	// time.Local = time.UTC
+
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds | log.Lshortfile | log.Lmsgprefix)
 	// log.SetFlags(log.Ltime | log.Lmicroseconds)
 	log.SetPrefix("")
 
 	db := initDb(false)
 	defer db.Close()
-
-	osSignal := make(chan os.Signal, 1)
-	signal.Notify(osSignal, os.Interrupt)
 
 	scheduler := barn.NewScheduler(db)
 	err := scheduler.InitializeDB()
@@ -93,6 +92,8 @@ func main() {
 	}
 	// go manager.Run()
 
+	osSignal := make(chan os.Signal, 1)
+	signal.Notify(osSignal, os.Interrupt)
 	s := <-osSignal
 	slog.Info("os signal received", "signal", s)
 
