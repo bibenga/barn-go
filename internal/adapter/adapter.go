@@ -18,7 +18,7 @@ var defaultLockQueryConfig = LockQueryConfig{
 
 type LockQuery struct {
 	createTableQuery string
-	createQuery      string
+	insertQuery      string
 	selectQuery      string
 	lockQuery        string
 	confirmQuery     string
@@ -40,7 +40,7 @@ func NewLockQuery(c LockQueryConfig) LockQuery {
 			c.lockedByField,
 			c.nameField,
 		),
-		createQuery: fmt.Sprintf(
+		insertQuery: fmt.Sprintf(
 			`insert into %s(%s) 
 			values ($1) 
 			on conflict (%s) do nothing`,
@@ -90,8 +90,8 @@ func (q *LockQuery) GetCreateTableQuery() string {
 	return q.createTableQuery
 }
 
-func (q *LockQuery) GetCreateQuery() string {
-	return q.createQuery
+func (q *LockQuery) GetInsertQuery() string {
+	return q.insertQuery
 }
 
 func (q *LockQuery) GetSelectQuery() string {

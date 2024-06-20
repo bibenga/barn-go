@@ -83,9 +83,9 @@ func main() {
 		slog.Error("db error", "error", err)
 		panic(err)
 	}
-	go scheduler.Run()
+	// go scheduler.Run()
 
-	manager := barn.NewLockManager(db, &barn.DummyLockListener{})
+	manager := barn.NewLockManager(db, "barn", &barn.DummyLockListener{})
 	err = manager.CreateTable()
 	if err != nil {
 		slog.Error("db error", "error", err)

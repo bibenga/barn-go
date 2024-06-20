@@ -38,15 +38,13 @@ type LockListener interface {
 	OnUnlock(lockName string)
 }
 
-func NewLockManager(db *sql.DB, listener LockListener) *LockManager {
+func NewLockManager(db *sql.DB, lockName string, listener LockListener) *LockManager {
 	hostname, err := os.Hostname()
 	if err != nil {
 		slog.Warn("can't get hostname", "error", err)
 		uuid, _ := uuid.NewRandom()
 		hostname = uuid.String()
 	}
-
-	lockName := "barn"
 
 	manager := LockManager{
 		log:           slog.Default().With("lock", lockName, "hostname", hostname),
@@ -154,7 +152,7 @@ func (manager *LockManager) create() error {
 	}
 
 	res, err := tx.Exec(
-		manager.query.GetCreateQuery(),
+		manager.query.GetInsertQuery(),
 		manager.lockName,
 	)
 	if err != nil {

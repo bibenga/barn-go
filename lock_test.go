@@ -133,7 +133,7 @@ func TestLockAcquire(t *testing.T) {
 	_, err = db.Exec(`insert into barn_lock (name) values ('unnecessary')`)
 	assert.NoError(err)
 
-	manager := NewLockManager(db, &DummyLockListener{})
+	manager := NewLockManager(db, "barn", &DummyLockListener{})
 	captured, err := manager.tryLock()
 	assert.NoError(err)
 	assert.True(captured)
