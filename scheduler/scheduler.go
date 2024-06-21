@@ -44,13 +44,19 @@ func (e Entry) LogValue() slog.Value {
 }
 
 func (e *Entry) IsChanged(o *Entry) bool {
-	if e.Cron != o.Cron {
-		slog.Info("1 - changed entry", "Cron1", e.Cron, "Cron2", o.Cron)
+	if e.Cron != nil && o.Cron != nil {
+		if *e.Cron != *o.Cron {
+			return true
+		}
+	} else if e.Cron != nil || o.Cron != nil {
 		return true
 	}
 
-	if e.NextTs != o.NextTs {
-		slog.Info("3 - changed entry", "NextTs1", e.NextTs, "NextTs2", o.NextTs)
+	if e.NextTs != nil && o.NextTs != nil {
+		if *e.NextTs != *o.NextTs {
+			return true
+		}
+	} else if e.NextTs != nil || o.NextTs != nil {
 		return true
 	}
 
