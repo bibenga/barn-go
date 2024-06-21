@@ -69,12 +69,12 @@ func main() {
 		slog.Error("db error", "error", err)
 		panic(err)
 	}
+
 	err = scheduler.DeleteAll()
 	if err != nil {
 		slog.Error("db error", "error", err)
 		panic(err)
 	}
-
 	cron1 := "*/5 * * * * *"
 	err = scheduler.Add("olala1", &cron1, nil, "{\"type\":\"olala1\"}")
 	if err != nil {

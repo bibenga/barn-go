@@ -45,12 +45,10 @@ type SchedulerListener interface {
 type Scheduler struct {
 	log         *slog.Logger
 	listener    SchedulerListener
-	entries     EntryMap
-	reloadEntry Entry
 	db          *sql.DB
 	query       EntryQuery
-	stop        chan struct{}
-	stopped     chan struct{}
+	entries     EntryMap
+	reloadEntry Entry
 }
 
 func NewScheduler(db *sql.DB, listener SchedulerListener) *Scheduler {
@@ -58,6 +56,8 @@ func NewScheduler(db *sql.DB, listener SchedulerListener) *Scheduler {
 	scheduler := Scheduler{
 		log:      slog.Default(),
 		listener: listener,
+		db:       db,
+		query:    NewDefaultEntryQuery(),
 		entries:  make(EntryMap),
 		reloadEntry: Entry{
 			Id:       math.MinInt,
@@ -65,10 +65,6 @@ func NewScheduler(db *sql.DB, listener SchedulerListener) *Scheduler {
 			IsActive: true,
 			Cron:     &reloadCron,
 		},
-		db:      db,
-		query:   NewDefaultEntryQuery(),
-		stop:    make(chan struct{}),
-		stopped: make(chan struct{}),
 	}
 	return &scheduler
 }
@@ -87,15 +83,6 @@ func (s *Scheduler) StartContext(ctx context.Context) {
 	go s.Run(ctx)
 }
 
-func (s *Scheduler) Stop() {
-	s.log.Info("stopping")
-	s.stop <- struct{}{}
-	<-s.stopped
-	close(s.stop)
-	close(s.stopped)
-	s.log.Info("stopped")
-}
-
 func (s *Scheduler) Run(ctx context.Context) {
 	s.log.Info("started")
 
@@ -112,10 +99,6 @@ func (s *Scheduler) Run(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			s.log.Info("terminate")
-			return
-		case <-s.stop:
-			s.log.Info("terminate")
-			s.stopped <- struct{}{}
 			return
 		case <-timer.C:
 			if e == &s.reloadEntry {
@@ -167,12 +150,12 @@ func (s *Scheduler) reload() error {
 				// changed
 				s.log.Info("changed entry", "entry", newEntry)
 				// s.entries[id] = newEntry
+				s.entries[id] = newEntry
 			} else {
 				s.log.Info("unchanged entry", "entry", newEntry)
-				// oldEntry.Name = newEntry.Name
-				// oldEntry.Message = newEntry.Message
+				oldEntry.Name = newEntry.Name
+				oldEntry.Message = newEntry.Message
 			}
-			s.entries[id] = newEntry
 		} else {
 			// added
 			s.log.Info("new entry", "entry", newEntry.Id)
@@ -182,7 +165,8 @@ func (s *Scheduler) reload() error {
 			if nextTs, err := gronx.NextTick(*newEntry.Cron, true); err != nil {
 				return err
 			} else {
-				s.reloadEntry.NextTs = &nextTs
+				newEntry.NextTs = &nextTs
+				s.update(newEntry)
 			}
 		}
 	}
