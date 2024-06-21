@@ -167,7 +167,7 @@ func (l *Lock) TryLock() (bool, error) {
 	}
 }
 
-func (l *Lock) Lock(ctx context.Context) (bool, error) {
+func (l *Lock) Lock() (bool, error) {
 	return l.LockContext(context.Background())
 }
 
