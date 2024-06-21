@@ -205,7 +205,7 @@ func (l *Lock) Confirm() (bool, error) {
 		return false, errors.New("the lock is not locked")
 	}
 	lockedAt := time.Now().UTC()
-	rottenTs := time.Now().UTC().Add(-l.ttl)
+	rottenTs := lockedAt.Add(-l.ttl)
 	res, err := l.db.Exec(
 		l.query.GetConfirmQuery(),
 		l.name, lockedAt,
