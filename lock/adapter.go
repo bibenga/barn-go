@@ -6,14 +6,14 @@ type LockQueryConfig struct {
 	tableName     string
 	nameField     string
 	lockedAtField string
-	lockedByField string
+	ownerField    string
 }
 
 var defaultLockQueryConfig = LockQueryConfig{
 	tableName:     "barn_lock",
 	nameField:     "name",
 	lockedAtField: "locked_at",
-	lockedByField: "locked_by",
+	ownerField:    "owner",
 }
 
 type LockQuery struct {
@@ -37,7 +37,7 @@ func NewLockQuery(c LockQueryConfig) LockQuery {
 			c.tableName,
 			c.nameField,
 			c.lockedAtField,
-			c.lockedByField,
+			c.ownerField,
 			c.nameField,
 		),
 		insertQuery: fmt.Sprintf(
@@ -51,7 +51,7 @@ func NewLockQuery(c LockQueryConfig) LockQuery {
 			`select %s, %s 
 			from %s 
 			where %s = $1`,
-			c.lockedAtField, c.lockedByField,
+			c.lockedAtField, c.ownerField,
 			c.tableName,
 			c.nameField,
 		),
@@ -60,7 +60,7 @@ func NewLockQuery(c LockQueryConfig) LockQuery {
 			set %s = $1, %s = $2 
 			where %s = $3 and (%s is null or %s < $4)`,
 			c.tableName,
-			c.lockedByField, c.lockedAtField,
+			c.ownerField, c.lockedAtField,
 			c.nameField, c.lockedAtField, c.lockedAtField,
 		),
 		confirmQuery: fmt.Sprintf(
@@ -68,16 +68,16 @@ func NewLockQuery(c LockQueryConfig) LockQuery {
 			set %s = $1, %s = $2 
 			where %s = $3 and %s = $4 and %s > $5`,
 			c.tableName,
-			c.lockedByField, c.lockedAtField,
-			c.nameField, c.lockedByField, c.lockedAtField,
+			c.ownerField, c.lockedAtField,
+			c.nameField, c.ownerField, c.lockedAtField,
 		),
 		unlockQuery: fmt.Sprintf(
 			`update %s 
 			set %s = null, %s = null
 			where %s = $1 and %s = $2 and (%s is null or %s > $3)`,
 			c.tableName,
-			c.lockedByField, c.lockedAtField,
-			c.nameField, c.lockedByField, c.lockedAtField, c.lockedAtField,
+			c.ownerField, c.lockedAtField,
+			c.nameField, c.ownerField, c.lockedAtField, c.lockedAtField,
 		),
 	}
 }

@@ -85,7 +85,7 @@ func main() {
 	}
 	// go scheduler.Run()
 
-	lock := lock.NewLockManager(db, "barn", &lock.DummyLockListener{})
+	lock := lock.NewLock(db, "barn", 1*time.Second, 10*time.Second, &lock.DummyLockListener{})
 	err = lock.CreateTable()
 	if err != nil {
 		slog.Error("db error", "error", err)

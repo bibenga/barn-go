@@ -1,7 +1,6 @@
 package lock
 
 import (
-	"context"
 	"database/sql"
 	"fmt"
 	"log/slog"
@@ -84,30 +83,7 @@ func setup(t *testing.T) *sql.DB {
 	return db
 }
 
-func newTx(t *testing.T, readOnly bool) *sql.Tx {
-	t.Helper()
-	assert := require.New(t)
-
-	t.Log("db - Open")
-	db := setup(t)
-
-	t.Log("tx - Begin")
-	tx, err := db.BeginTx(context.Background(), &sql.TxOptions{
-		Isolation: sql.LevelDefault,
-		ReadOnly:  readOnly,
-	})
-	assert.NoError(err)
-
-	t.Cleanup(func() {
-		t.Helper()
-		t.Log("tx - Rollback")
-		err := tx.Rollback()
-		assert.NoError(err)
-	})
-	return tx
-}
-
-func TestLockAcquire(t *testing.T) {
+func TestTryLock(t *testing.T) {
 	assert := require.New(t)
 
 	db := setup(t)
@@ -117,36 +93,31 @@ func TestLockAcquire(t *testing.T) {
 	_, err = db.Exec(`insert into barn_lock (name) values ('unnecessary')`)
 	assert.NoError(err)
 
-	manager := NewLockManager(db, "barn", &DummyLockListener{})
-	captured, err := manager.tryLock()
+	l := NewLock(db, "barn", 1*time.Second, 10*time.Second, &DummyLockListener{})
+	captured, err := l.tryLock()
 	assert.NoError(err)
 	assert.True(captured)
-	assert.True(manager.locked)
-	assert.NotNil(manager.lockedAt)
+	assert.True(l.locked)
+	assert.NotNil(l.lockedAt)
 
-	row := db.QueryRow("select locked_at, locked_by from barn_lock where name='barn'")
+	row := db.QueryRow("select locked_at, owner from barn_lock where name='barn'")
 	assert.NoError(row.Err())
 	assert.NotNil(row)
 	var locked_at *time.Time
-	var locked_by *string
-	assert.NoError(row.Scan(&locked_at, &locked_by))
+	var owner *string
+	assert.NoError(row.Scan(&locked_at, &owner))
 	assert.NotNil(locked_at)
-	assert.Equal(manager.lockedAt.Truncate(time.Millisecond), locked_at.In(time.UTC).Truncate(time.Millisecond))
-	assert.NotNil(locked_by)
-	assert.Equal(manager.hostname, *locked_by)
+	assert.Equal(l.lockedAt.Truncate(time.Millisecond), locked_at.In(time.UTC).Truncate(time.Millisecond))
+	assert.NotNil(owner)
+	assert.Equal(l.name, *owner)
 }
 
-func TestTx(t *testing.T) {
+func TestLogState(t *testing.T) {
 	assert := require.New(t)
 
-	tx := newTx(t, false)
-	assert.NotNil(tx)
+	db := setup(t)
 
-	row := tx.QueryRow("select 1,2")
-	assert.NoError(row.Err())
-	assert.NotNil(row)
-	var v1, v2 int
-	assert.NoError(row.Scan(&v1, &v2))
-	assert.Equal(v1, 1)
-	assert.Equal(v2, 2)
+	l := NewLock(db, "barn", 1*time.Second, 10*time.Second, &DummyLockListener{})
+	err := l.logState()
+	assert.NoError(err)
 }
