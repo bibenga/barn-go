@@ -77,7 +77,7 @@ func NewLockQuery(c LockQueryConfig) LockQuery {
 			where %s = $1 and %s = $2 and %s > $3`,
 			c.tableName,
 			c.ownerField, c.lockedAtField,
-			c.nameField, c.ownerField, c.lockedAtField, c.lockedAtField,
+			c.nameField, c.ownerField, c.lockedAtField,
 		),
 	}
 }
