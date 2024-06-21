@@ -1,11 +1,12 @@
 package lock
 
 import (
+	"context"
 	"log/slog"
 	"time"
 )
 
-type Leader struct {
+type LeaderElector struct {
 	log      *slog.Logger
 	lock     *Lock
 	listener LeaderListener
@@ -14,12 +15,12 @@ type Leader struct {
 }
 
 type LeaderListener interface {
-	OnLock()
-	OnUnlock()
+	OnHire()
+	OnFire()
 }
 
-func NewLeader(lock *Lock, listener LeaderListener) *Leader {
-	leader := Leader{
+func NewLeaderElector(lock *Lock, listener LeaderListener) *LeaderElector {
+	leader := LeaderElector{
 		log:      slog.Default(),
 		lock:     lock,
 		listener: listener,
@@ -29,13 +30,16 @@ func NewLeader(lock *Lock, listener LeaderListener) *Leader {
 	return &leader
 }
 
-func (l *Leader) Start() error {
-	go l.Run()
-	return nil
+func (l *LeaderElector) Start() {
+	l.StartContext(context.Background())
 }
 
-func (l *Leader) Stop() {
-	l.log.Info("stopping")
+func (l *LeaderElector) StartContext(ctx context.Context) {
+	go l.Run(ctx)
+}
+
+func (l *LeaderElector) Stop() {
+	l.log.Debug("stopping")
 	l.stop <- struct{}{}
 	<-l.stopped
 	close(l.stop)
@@ -43,7 +47,7 @@ func (l *Leader) Stop() {
 	l.log.Info("stopped")
 }
 
-func (l *Leader) Run() {
+func (l *LeaderElector) Run(ctx context.Context) {
 	if err := l.open(); err != nil {
 		panic(err)
 	}
@@ -54,6 +58,12 @@ func (l *Leader) Run() {
 	l.log.Info("started")
 	for {
 		select {
+		case <-ctx.Done():
+			l.log.Info("terminate")
+			if err := l.close(); err != nil {
+				panic(err)
+			}
+			return
 		case <-l.stop:
 			l.log.Info("terminate")
 			if err := l.close(); err != nil {
@@ -69,25 +79,25 @@ func (l *Leader) Run() {
 	}
 }
 
-func (l *Leader) open() error {
+func (l *LeaderElector) open() error {
 	if err := l.lock.Create(); err != nil {
 		panic(err)
 	}
 	if l.lock.IsLocked() {
-		l.onLock()
+		l.onHire()
 	} else {
 		if locked, err := l.lock.TryLock(); err != nil {
 			return err
 		} else {
 			if locked {
-				l.onLock()
+				l.onHire()
 			}
 		}
 	}
 	return nil
 }
 
-func (l *Leader) hearbeat() error {
+func (l *LeaderElector) hearbeat() error {
 	if l.lock.IsLocked() {
 		if confirmed, err := l.lock.Confirm(); err != nil {
 			return err
@@ -96,7 +106,7 @@ func (l *Leader) hearbeat() error {
 				l.log.Info("the lock is still owned me")
 			} else {
 				l.log.Warn("the lock has been acquired by someone unexpectedly")
-				l.onUnlock()
+				l.onFire()
 			}
 		}
 	} else {
@@ -105,7 +115,7 @@ func (l *Leader) hearbeat() error {
 		} else {
 			if acquired {
 				l.log.Info("the lock is rotten and acquired")
-				l.onLock()
+				l.onHire()
 			} else {
 				if state, err := l.lock.State(); err != nil {
 					return err
@@ -118,39 +128,39 @@ func (l *Leader) hearbeat() error {
 	return nil
 }
 
-func (l *Leader) close() error {
+func (l *LeaderElector) close() error {
 	if l.lock.IsLocked() {
 		if unlocked, err := l.lock.Unlock(); err != nil {
 			return err
 		} else {
 			if unlocked {
-				l.onUnlock()
+				l.onFire()
 			}
 		}
 	}
 	return nil
 }
 
-func (l *Leader) onLock() {
+func (l *LeaderElector) onHire() {
 	if l.listener != nil {
-		l.listener.OnLock()
+		l.listener.OnHire()
 	}
 }
 
-func (l *Leader) onUnlock() {
+func (l *LeaderElector) onFire() {
 	if l.listener != nil {
-		l.listener.OnUnlock()
+		l.listener.OnFire()
 	}
 }
 
 type DummyLeaderListener struct{}
 
-func (l *DummyLeaderListener) OnLock() {
-	slog.Info("DUMMY: the lock is acquired")
+func (l *DummyLeaderListener) OnHire() {
+	slog.Info("DUMMY: the leader is hired")
 }
 
-func (l *DummyLeaderListener) OnUnlock() {
-	slog.Info("DUMMY: the lock is released")
+func (l *DummyLeaderListener) OnFire() {
+	slog.Info("DUMMY: the leader is fired")
 }
 
 var _ LeaderListener = &DummyLeaderListener{}

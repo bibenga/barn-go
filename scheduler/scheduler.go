@@ -1,7 +1,9 @@
 package scheduler
 
 import (
+	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"time"
@@ -13,10 +15,10 @@ type Entry struct {
 	Id       int32
 	Name     string
 	IsActive bool
-	Cron     sql.NullString
-	NextTs   sql.NullTime
-	LastTs   sql.NullTime
-	Message  sql.NullString
+	Cron     *string
+	NextTs   *time.Time
+	LastTs   *time.Time
+	Message  *string
 }
 
 func (e Entry) LogValue() slog.Value {
@@ -24,11 +26,11 @@ func (e Entry) LogValue() slog.Value {
 	var args []slog.Attr
 	args = append(args, slog.Int("Id", int(e.Id)))
 	args = append(args, slog.Bool("IsActive", e.IsActive))
-	if e.Cron.Valid {
-		args = append(args, slog.String("Cron", e.Cron.String))
+	if e.Cron != nil {
+		args = append(args, slog.String("Cron", *e.Cron))
 	}
-	if e.NextTs.Valid {
-		args = append(args, slog.String("NextTs", e.NextTs.Time.String()))
+	if e.NextTs != nil {
+		args = append(args, slog.String("NextTs", e.NextTs.String()))
 	}
 	return slog.GroupValue(
 		// slog.Int("Id", int(e.Id)),
@@ -58,54 +60,55 @@ func (e *Entry) IsChanged(o *Entry) bool {
 type EntryMap map[int32]*Entry
 
 type SchedulerListener interface {
-	Process(name string, moment time.Time, message string) error
+	Process(name string, moment time.Time, message *string) error
 }
 
 type Scheduler struct {
-	log     *slog.Logger
-	entries EntryMap
-	db      *sql.DB
-	query   EntryQuery
-	stop    chan struct{}
-	stopped chan struct{}
-	timer   *time.Timer
-	entry   *Entry
+	log      *slog.Logger
+	listener SchedulerListener
+	entries  EntryMap
+	db       *sql.DB
+	query    EntryQuery
+	stop     chan struct{}
+	stopped  chan struct{}
+	timer    *time.Timer
+	entry    *Entry
 }
 
-func NewScheduler(db *sql.DB) *Scheduler {
+func NewScheduler(db *sql.DB, listener SchedulerListener) *Scheduler {
 	scheduler := Scheduler{
-		log:     slog.Default(),
-		entries: make(EntryMap),
-		db:      db,
-		query:   NewDefaultEntryQuery(),
-		stop:    make(chan struct{}),
-		stopped: make(chan struct{}),
+		log:      slog.Default(),
+		listener: listener,
+		entries:  make(EntryMap),
+		db:       db,
+		query:    NewDefaultEntryQuery(),
+		stop:     make(chan struct{}),
+		stopped:  make(chan struct{}),
 	}
 	return &scheduler
 }
 
-func (scheduler *Scheduler) CreateTable() error {
-	db := scheduler.db
-	scheduler.log.Info("create table")
-	_, err := db.Exec(scheduler.query.GetCreateTableQuery())
+func (s *Scheduler) CreateTable() error {
+	s.log.Info("create table")
+	_, err := s.db.Exec(s.query.GetCreateTableQuery())
 	return err
 }
 
-func (scheduler *Scheduler) Stop() {
-	scheduler.log.Info("stopping")
-	scheduler.stop <- struct{}{}
-	<-scheduler.stopped
-	close(scheduler.stop)
-	close(scheduler.stopped)
-	scheduler.log.Info("stopped")
+func (s *Scheduler) Stop() {
+	s.log.Info("stopping")
+	s.stop <- struct{}{}
+	<-s.stopped
+	close(s.stop)
+	close(s.stopped)
+	s.log.Info("stopped")
 }
 
-func (scheduler *Scheduler) Run() {
-	scheduler.log.Info("started")
+func (s *Scheduler) Run(ctx context.Context) {
+	s.log.Info("started")
 
-	err := scheduler.reload()
+	err := s.reload()
 	if err != nil {
-		scheduler.log.Error("db", "error", err)
+		s.log.Error("db", "error", err)
 		panic(err)
 	}
 
@@ -113,128 +116,131 @@ func (scheduler *Scheduler) Run() {
 	defer reloader.Stop()
 
 	// I don't know how to be
-	scheduler.timer = time.NewTimer(1 * time.Second)
-	defer scheduler.timer.Stop()
+	s.timer = time.NewTimer(1 * time.Second)
+	defer s.timer.Stop()
 	select {
-	case <-scheduler.timer.C:
+	case <-s.timer.C:
 	default:
 	}
-	scheduler.scheduleNext()
+	s.scheduleNext()
 
 	for {
 		select {
-		case <-scheduler.stop:
-			scheduler.log.Info("terminate")
-			scheduler.stopped <- struct{}{}
+		case <-ctx.Done():
+			s.log.Info("terminate")
 			return
-		case <-scheduler.timer.C:
-			err = scheduler.processEntry()
+		case <-s.stop:
+			s.log.Info("terminate")
+			s.stopped <- struct{}{}
+			return
+		case <-s.timer.C:
+			err = s.processEntry()
 			if err != nil {
-				scheduler.log.Error("db", "error", err)
+				s.log.Error("db", "error", err)
 				// panic(err)
 			}
-			scheduler.scheduleNext()
+			s.scheduleNext()
 		case <-reloader.C:
-			err = scheduler.reload()
+			err = s.reload()
 			if err != nil {
-				scheduler.log.Error("db", "error", err)
+				s.log.Error("db", "error", err)
 				// panic(err)
 			}
 		}
 	}
 }
 
-func (scheduler *Scheduler) reload() error {
-	scheduler.log.Info("reload")
+func (s *Scheduler) reload() error {
+	s.log.Info("reload")
 
-	entries, err := scheduler.getEntries()
+	entries, err := s.getEntries()
 	if err != nil {
 		return err
 	}
 
 	for id, newEntry := range entries {
-		if oldEntry, ok := scheduler.entries[id]; ok {
+		if oldEntry, ok := s.entries[id]; ok {
 			// exists
 			if oldEntry.IsChanged(newEntry) {
 				// changed
-				scheduler.log.Info("changed entry", "entry", newEntry)
-				if !newEntry.NextTs.Valid {
-					nextTs2, err := gronx.NextTick(newEntry.Cron.String, true)
+				s.log.Info("changed entry", "entry", newEntry)
+				if newEntry.NextTs == nil {
+					nextTs, err := gronx.NextTick(*newEntry.Cron, true)
 					if err != nil {
 						return err
 					}
-					newEntry.NextTs = sql.NullTime{Time: nextTs2, Valid: true}
-					scheduler.update(newEntry)
+					newEntry.NextTs = &nextTs
+					s.update(newEntry)
 				}
-				scheduler.entries[id] = newEntry
+				s.entries[id] = newEntry
 
-				scheduler.entry = nil
+				s.entry = nil
 			} else {
 				oldEntry.Name = newEntry.Name
 				oldEntry.Message = newEntry.Message
 			}
 		} else {
 			// added
-			scheduler.log.Info("new entry", "entry", newEntry.Id)
-			scheduler.entries[id] = newEntry
+			s.log.Info("new entry", "entry", newEntry.Id)
+			s.entries[id] = newEntry
 		}
 	}
 
-	for id, oldEntry := range scheduler.entries {
+	for id, oldEntry := range s.entries {
 		if _, ok := entries[id]; !ok {
-			scheduler.log.Info("deleted entry", "entry", oldEntry.Id)
-			delete(scheduler.entries, oldEntry.Id)
+			s.log.Info("deleted entry", "entry", oldEntry.Id)
+			delete(s.entries, oldEntry.Id)
 		}
 	}
 
 	// scheduler.entries = entries
 
-	if scheduler.entry != nil {
-		entry2 := scheduler.entries[scheduler.entry.Id]
+	if s.entry != nil {
+		entry2 := s.entries[s.entry.Id]
 		// slog.Info("RESCHEDULE", "entry", scheduler.entry, "entry2", entry2)
-		if entry2 != scheduler.entry {
+		if entry2 != s.entry {
 			// object changed
-			scheduler.log.Info("RESCHEDULE", "entry", scheduler.entry)
-			scheduler.scheduleNext()
+			s.log.Info("RESCHEDULE", "entry", s.entry)
+			s.scheduleNext()
 		}
 	}
 	return nil
 }
 
-func (scheduler *Scheduler) scheduleNext() {
-	var next *Entry = scheduler.getNext()
+func (s *Scheduler) scheduleNext() {
+	var next *Entry = s.getNext()
 	// if next != nil && scheduler.entry != nil && next.Id == scheduler.entry.Id {
 	// 	return
 	// }
-	scheduler.entry = next
+	s.entry = next
 
 	var d time.Duration
 	if next != nil {
-		d = time.Until(next.NextTs.Time)
-		scheduler.log.Info("next", "entry", next.Id, "nextTs", next.NextTs)
+		d = time.Until(*next.NextTs)
+		s.log.Info("next", "entry", next.Id, "nextTs", next.NextTs)
 	} else {
 		d = 1 * time.Second
-		scheduler.log.Info("next", "entry", nil)
+		s.log.Info("next", "entry", nil)
 	}
 
 	// scheduler.timer.Reset(time.Since(*next.NextTs))
-	scheduler.timer.Stop()
+	s.timer.Stop()
 	select {
-	case <-scheduler.timer.C:
+	case <-s.timer.C:
 	default:
 	}
-	scheduler.timer.Reset(d)
+	s.timer.Reset(d)
 }
 
-func (scheduler *Scheduler) getNext() *Entry {
+func (s *Scheduler) getNext() *Entry {
 	var next *Entry = nil
-	for _, entry := range scheduler.entries {
+	for _, entry := range s.entries {
 		if next == nil {
 			next = entry
 			// scheduler.log.Info("=> ", "next", next.NextTs)
 		} else {
 			// scheduler.log.Info("=> ", "next", next.NextTs, "entry", entry.NextTs)
-			if entry.NextTs.Time.Before(next.NextTs.Time) {
+			if entry.NextTs.Before(*next.NextTs) {
 				next = entry
 			}
 		}
@@ -242,25 +248,26 @@ func (scheduler *Scheduler) getNext() *Entry {
 	return next
 }
 
-func (scheduler *Scheduler) processEntry() error {
-	entry := scheduler.entry
+func (s *Scheduler) processEntry() error {
+	entry := s.entry
 	if entry != nil {
 		// process
-		scheduler.log.Info("tik ", "entry", entry.Id, "nextTs", entry.NextTs)
+		s.log.Info("tik ", "entry", entry.Id, "nextTs", entry.NextTs)
+		s.listener.Process(entry.Name, *entry.NextTs, entry.Message)
 		// calculate next time
-		if entry.Cron.Valid {
-			nextTs, err := gronx.NextTick(entry.Cron.String, false)
+		if entry.Cron != nil {
+			nextTs, err := gronx.NextTick(*entry.Cron, false)
 			if err != nil {
-				scheduler.log.Info("cron is invalid", "entry", entry)
+				s.log.Info("cron is invalid", "entry", entry)
 				entry.IsActive = false
 			} else {
 				entry.LastTs = entry.NextTs
-				entry.NextTs = sql.NullTime{Time: nextTs, Valid: true}
+				entry.NextTs = &nextTs
 			}
 		} else {
 			entry.IsActive = false
 		}
-		err := scheduler.update(entry)
+		err := s.update(entry)
 		if err != nil {
 			return err
 		}
@@ -268,9 +275,8 @@ func (scheduler *Scheduler) processEntry() error {
 	return nil
 }
 
-func (scheduler *Scheduler) getEntries() (EntryMap, error) {
-	db := scheduler.db
-	stmt, err := db.Prepare(scheduler.query.GetSelectAllQuery())
+func (s *Scheduler) getEntries() (EntryMap, error) {
+	stmt, err := s.db.Prepare(s.query.GetSelectAllQuery())
 	if err != nil {
 		return nil, err
 	}
@@ -289,35 +295,31 @@ func (scheduler *Scheduler) getEntries() (EntryMap, error) {
 			return nil, err
 		}
 		if e.IsActive {
-			if !e.Message.Valid {
-				// we don't know what to do...
-				scheduler.log.Warn("invalid entry", "entry", e)
-				scheduler.deactivate(&e)
-			} else if !e.Cron.Valid && !e.NextTs.Valid {
+			if e.Cron == nil && e.NextTs == nil {
 				// we don't know when to do...
-				scheduler.log.Warn("invalid entry", "entry", e)
-				scheduler.deactivate(&e)
+				s.log.Warn("invalid entry", "entry", e)
+				s.deactivate(&e)
 			} else {
-				if !e.NextTs.Valid {
-					nextTs2, err := gronx.NextTick(e.Cron.String, true)
+				if e.NextTs == nil {
+					nextTs, err := gronx.NextTick(*e.Cron, true)
 					if err != nil {
-						scheduler.log.Info("invalid cron string", "entry", e)
+						s.log.Info("invalid cron string", "entry", e)
 						continue
 					}
-					e.NextTs = sql.NullTime{Time: nextTs2, Valid: true}
-					scheduler.update(&e)
+					e.NextTs = &nextTs
+					s.update(&e)
 				}
-				scheduler.log.Info("the entry is active", "entry", e)
+				s.log.Info("the entry is active", "entry", e)
 				entries[e.Id] = &e
 			}
 		} else {
-			scheduler.log.Info("the entry is inactive", "entry", e)
+			s.log.Info("the entry is inactive", "entry", e)
 		}
 	}
 	return entries, nil
 }
 
-func (scheduler *Scheduler) Add(name string, cron *string, nextTs *time.Time, message string) error {
+func (s *Scheduler) Add(name string, cron *string, nextTs *time.Time, message string) error {
 	// fake 1
 	// cron := "*/5 * * * * *"
 	if cron == nil && nextTs == nil {
@@ -334,9 +336,8 @@ func (scheduler *Scheduler) Add(name string, cron *string, nextTs *time.Time, me
 	// 	nextTs = &nextTs2
 	// }
 
-	scheduler.log.Info("create the entry", "name", name, "cron", cron, "message", message)
-	db := scheduler.db
-	stmt, err := db.Prepare(scheduler.query.GetInsertQuery())
+	s.log.Info("create the entry", "name", name, "cron", cron, "message", message)
+	stmt, err := s.db.Prepare(s.query.GetInsertQuery())
 	if err != nil {
 		return err
 	}
@@ -347,16 +348,14 @@ func (scheduler *Scheduler) Add(name string, cron *string, nextTs *time.Time, me
 	if err != nil {
 		return err
 	}
-	scheduler.log.Info("the entry is created", "name", name, "id", id)
+	s.log.Info("the entry is created", "name", name, "id", id)
 	return nil
 }
 
-func (scheduler *Scheduler) Delete(id int) error {
-	db := scheduler.db
-
-	scheduler.log.Info("delete the entry", "id", id)
-	res, err := db.Exec(
-		scheduler.query.GetDeleteQuery(),
+func (s *Scheduler) Delete(id int) error {
+	s.log.Info("delete the entry", "id", id)
+	res, err := s.db.Exec(
+		s.query.GetDeleteQuery(),
 		id,
 	)
 	if err != nil {
@@ -367,16 +366,14 @@ func (scheduler *Scheduler) Delete(id int) error {
 		return err
 	}
 	if rowsAffected != 1 {
-		scheduler.log.Info("the entry was already deleted", "entry", id)
+		s.log.Info("the entry was already deleted", "entry", id)
 	}
 	return nil
 }
 
-func (scheduler *Scheduler) DeleteAll() error {
-	db := scheduler.db
-
-	scheduler.log.Info("delete all entries")
-	res, err := db.Exec(scheduler.query.GetDeleteAllQuery())
+func (s *Scheduler) DeleteAll() error {
+	s.log.Info("delete all entries")
+	res, err := s.db.Exec(s.query.GetDeleteAllQuery())
 	if err != nil {
 		return err
 	}
@@ -384,16 +381,14 @@ func (scheduler *Scheduler) DeleteAll() error {
 	if err != nil {
 		return err
 	}
-	scheduler.log.Info("all entries is deleted", "RowsAffected", rowsAffected)
+	s.log.Info("all entries is deleted", "RowsAffected", rowsAffected)
 	return nil
 }
 
-func (scheduler *Scheduler) update(entry *Entry) error {
-	db := scheduler.db
-
-	scheduler.log.Info("update the entry", "entry", entry)
-	res, err := db.Exec(
-		scheduler.query.GetUpdateQuery(),
+func (s *Scheduler) update(entry *Entry) error {
+	s.log.Info("update the entry", "entry", entry)
+	res, err := s.db.Exec(
+		s.query.GetUpdateQuery(),
 		entry.IsActive, entry.NextTs, entry.LastTs, entry.Id,
 	)
 	if err != nil {
@@ -410,13 +405,11 @@ func (scheduler *Scheduler) update(entry *Entry) error {
 	return nil
 }
 
-func (scheduler *Scheduler) deactivate(entry *Entry) error {
-	db := scheduler.db
-
+func (s *Scheduler) deactivate(entry *Entry) error {
 	entry.IsActive = false
-	scheduler.log.Info("deactivate the entry", "entry", entry)
-	res, err := db.Exec(
-		scheduler.query.GetUpdateIsActiveQuery(),
+	s.log.Info("deactivate the entry", "entry", entry)
+	res, err := s.db.Exec(
+		s.query.GetUpdateIsActiveQuery(),
 		false, entry.Id,
 	)
 	if err != nil {
@@ -427,7 +420,33 @@ func (scheduler *Scheduler) deactivate(entry *Entry) error {
 		return err
 	}
 	if rowsAffected != 1 {
-		scheduler.log.Info("the entry was deleted somewhen", "entry", entry)
+		s.log.Info("the entry was deleted somewhen", "entry", entry)
 	}
 	return nil
 }
+
+type DummySchedulerListener struct {
+}
+
+func (l *DummySchedulerListener) Process(name string, moment time.Time, message *string) error {
+	var payload map[string]interface{}
+	if message != nil {
+		if err := json.Unmarshal([]byte(*message), &payload); err != nil {
+			return err
+		}
+	} else {
+		payload = make(map[string]interface{})
+	}
+	meta := make(map[string]interface{})
+	meta["name"] = "name"
+	meta["moment"] = moment
+	payload["_meta"] = meta
+	if encodedPayload, err := json.Marshal(payload); err != nil {
+		return err
+	} else {
+		slog.Info("DUMMY: process", "payload", string(encodedPayload))
+	}
+	return nil
+}
+
+var _ SchedulerListener = &DummySchedulerListener{}

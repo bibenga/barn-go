@@ -55,7 +55,7 @@ func main() {
 	db := initDb(false)
 	defer db.Close()
 
-	scheduler := scheduler.NewScheduler(db)
+	scheduler := scheduler.NewScheduler(db, &scheduler.DummySchedulerListener{})
 	err := scheduler.CreateTable()
 	if err != nil {
 		slog.Error("db error", "error", err)
@@ -91,8 +91,8 @@ func main() {
 		slog.Error("db error", "error", err)
 		panic(err)
 	}
-	leader := lock.NewLeader(dbLock, &lock.DummyLeaderListener{})
-	go leader.Run()
+	leader := lock.NewLeaderElector(dbLock, &lock.DummyLeaderListener{})
+	leader.Start()
 
 	osSignal := make(chan os.Signal, 1)
 	signal.Notify(osSignal, os.Interrupt)
