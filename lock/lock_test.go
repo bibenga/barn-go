@@ -16,16 +16,16 @@ import (
 )
 
 const driver = "pgx"
-const dbname = "barn"
-const dbname_test = "barn_test"
+const dbName = "barn"
+const testDbName = "barn_test"
 const dsn_tpl = "host=host.docker.internal port=5432 user=rds password=sqlsql dbname=%s TimeZone=UTC sslmode=disable"
 
-var dsn = fmt.Sprintf(dsn_tpl, dbname)
-var dsn_test = fmt.Sprintf(dsn_tpl, dbname_test)
-var drop_db_query = fmt.Sprintf(`drop database if exists %s`, dbname_test)
-var create_db_query = fmt.Sprintf(`create database %s`, dbname_test)
+var dsn = fmt.Sprintf(dsn_tpl, dbName)
+var testDsn = fmt.Sprintf(dsn_tpl, testDbName)
+var dropDbQuery = fmt.Sprintf(`drop database if exists %s`, testDbName)
+var createDbQuery = fmt.Sprintf(`create database %s`, testDbName)
 
-func newConnection(dsn string) (*sql.DB, error) {
+func newDb(dsn string) (*sql.DB, error) {
 	connConfig, err := pgx.ParseConfig(dsn)
 	if err != nil {
 		return nil, err
@@ -39,23 +39,23 @@ func newConnection(dsn string) (*sql.DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	db.SetMaxIdleConns(0)
-	db.SetMaxOpenConns(1)
 	return db, nil
 }
 
-func newTestConnection() (*sql.DB, error) {
-	db, err := newConnection(dsn)
+func newTestDb() (*sql.DB, error) {
+	// connect to some db
+	db, err := newDb(dsn)
 	if err != nil {
 		return nil, err
 	}
-	if _, err := db.Exec(drop_db_query); err != nil {
+	if _, err := db.Exec(dropDbQuery); err != nil {
 		return nil, err
 	}
-	if _, err := db.Exec(create_db_query); err != nil {
+	if _, err := db.Exec(createDbQuery); err != nil {
 		return nil, err
 	}
-	db, err = newConnection(dsn_test)
+	// connect to test db
+	db, err = newDb(testDsn)
 	if err != nil {
 		return nil, err
 	}
@@ -66,8 +66,7 @@ func setup(t *testing.T) *sql.DB {
 	t.Helper()
 	assert := require.New(t)
 
-	db, err := newTestConnection()
-	// db, err := newSqliteConnection()
+	db, err := newTestDb()
 	assert.NoError(err)
 	assert.NotNil(db)
 	assert.NoError(db.Ping())
