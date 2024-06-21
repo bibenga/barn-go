@@ -85,7 +85,7 @@ func main() {
 	}
 	// go scheduler.Run()
 
-	dbLock := lock.NewLock(db, "barn", 10*time.Second)
+	dbLock := lock.NewLock(db, "host1", "barn", 10*time.Second, lock.WithRandomName())
 	err = dbLock.CreateTable()
 	if err != nil {
 		slog.Error("db error", "error", err)

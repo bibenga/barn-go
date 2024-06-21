@@ -29,18 +29,13 @@ type Lock struct {
 	lockedAt *time.Time
 }
 
-func NewLock(db *sql.DB, lockName string, ttl time.Duration) *Lock {
-	name, err := os.Hostname()
-	if err != nil {
-		slog.Warn("can't get hostname", "error", err)
-		uuid, err := uuid.NewRandom()
-		if err != nil {
-			panic(err)
-		}
-		name = uuid.String()
-	}
+type lockOpt func(locker *Lock)
 
-	lock := Lock{
+const DefaultLockTtl = 60 * time.Second
+const DefaultLockHeartbeat = DefaultLockTtl / 3
+
+func NewLock(db *sql.DB, name string, lockName string, ttl time.Duration, opts ...lockOpt) *Lock {
+	lock := &Lock{
 		log:      slog.Default().With("lock", lockName, "name", name),
 		name:     name,
 		db:       db,
@@ -51,7 +46,41 @@ func NewLock(db *sql.DB, lockName string, ttl time.Duration) *Lock {
 		locked:   false,
 		lockedAt: nil,
 	}
-	return &lock
+	for _, opt := range opts {
+		opt(lock)
+	}
+	return lock
+}
+
+func WithHostname(name string) lockOpt {
+	return func(l *Lock) {
+		name, err := os.Hostname()
+		if err != nil {
+			panic(err)
+		}
+		if name == "" {
+			panic(errors.New("cannot retrieve hostname"))
+		}
+		l.name = name
+	}
+}
+
+func WithRandomName() lockOpt {
+	return func(l *Lock) {
+		uuid, err := uuid.NewRandom()
+		if err != nil {
+			panic(err)
+		}
+		l.name = uuid.String()
+	}
+}
+
+func WithTtl(ttl time.Duration) lockOpt {
+	return func(l *Lock) { l.ttl = ttl }
+}
+
+func WithHearbeat(hearbeat time.Duration) lockOpt {
+	return func(l *Lock) { l.hearbeat = hearbeat }
 }
 
 func (l *Lock) Name() string {
