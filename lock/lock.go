@@ -1,4 +1,4 @@
-package barn
+package lock
 
 import (
 	"context"
@@ -6,8 +6,6 @@ import (
 	"log/slog"
 	"os"
 	"time"
-
-	"github.com/bibenga/barn-go/internal/adapter"
 
 	"github.com/google/uuid"
 )
@@ -22,7 +20,7 @@ type LockManager struct {
 	log      *slog.Logger
 	hostname string
 	db       *sql.DB
-	query    adapter.LockQuery
+	query    LockQuery
 	listener LockListener
 	lockName string
 	hearbeat time.Duration
@@ -53,7 +51,7 @@ func NewLockManager(db *sql.DB, lockName string, listener LockListener) *LockMan
 		log:      slog.Default().With("lock", lockName, "hostname", hostname),
 		hostname: hostname,
 		db:       db,
-		query:    adapter.NewDefaultLockQuery(),
+		query:    NewDefaultLockQuery(),
 		listener: listener,
 		lockName: lockName,
 		hearbeat: 1 * time.Second,

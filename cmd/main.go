@@ -8,8 +8,8 @@ import (
 	"os/signal"
 	"time"
 
-	"github.com/bibenga/barn-go"
-
+	"github.com/bibenga/barn-go/lock"
+	"github.com/bibenga/barn-go/scheduler"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/jackc/pgx/v5/tracelog"
@@ -55,7 +55,7 @@ func main() {
 	db := initDb(false)
 	defer db.Close()
 
-	scheduler := barn.NewScheduler(db)
+	scheduler := scheduler.NewScheduler(db)
 	err := scheduler.CreateTable()
 	if err != nil {
 		slog.Error("db error", "error", err)
@@ -85,7 +85,7 @@ func main() {
 	}
 	// go scheduler.Run()
 
-	lock := barn.NewLockManager(db, "barn", &barn.DummyLockListener{})
+	lock := lock.NewLockManager(db, "barn", &lock.DummyLockListener{})
 	err = lock.CreateTable()
 	if err != nil {
 		slog.Error("db error", "error", err)

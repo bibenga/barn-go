@@ -1,4 +1,4 @@
-package barn
+package lock
 
 import (
 	"context"
@@ -8,14 +8,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bibenga/barn-go/internal/adapter"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/jackc/pgx/v5/tracelog"
 	pgxslog "github.com/mcosta74/pgx-slog"
 	"github.com/stretchr/testify/require"
-
-	_ "github.com/mattn/go-sqlite3"
 )
 
 const driver = "pgx"
@@ -47,14 +44,6 @@ func newConnection(dsn string) (*sql.DB, error) {
 	return db, nil
 }
 
-func newSqliteConnection() (*sql.DB, error) {
-	db, err := sql.Open("sqlite3", ":memory:")
-	if err != nil {
-		return nil, err
-	}
-	return db, nil
-}
-
 func newTestConnection() (*sql.DB, error) {
 	db, err := newConnection(dsn)
 	if err != nil {
@@ -83,12 +72,8 @@ func setup(t *testing.T) *sql.DB {
 	assert.NotNil(db)
 	assert.NoError(db.Ping())
 
-	lockQuery := adapter.NewDefaultLockQuery()
+	lockQuery := NewDefaultLockQuery()
 	_, err = db.Exec(lockQuery.GetCreateTableQuery())
-	assert.NoError(err)
-
-	entryQuery := adapter.NewDefaultEntryQuery()
-	_, err = db.Exec(entryQuery.GetCreateTableQuery())
 	assert.NoError(err)
 
 	t.Cleanup(func() {

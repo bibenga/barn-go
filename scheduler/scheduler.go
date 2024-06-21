@@ -1,4 +1,4 @@
-package barn
+package scheduler
 
 import (
 	"database/sql"
@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/adhocore/gronx"
-	"github.com/bibenga/barn-go/internal/adapter"
 )
 
 type Entry struct {
@@ -66,7 +65,7 @@ type Scheduler struct {
 	log     *slog.Logger
 	entries EntryMap
 	db      *sql.DB
-	query   adapter.EntryQuery
+	query   EntryQuery
 	stop    chan struct{}
 	stopped chan struct{}
 	timer   *time.Timer
@@ -78,7 +77,7 @@ func NewScheduler(db *sql.DB) *Scheduler {
 		log:     slog.Default(),
 		entries: make(EntryMap),
 		db:      db,
-		query:   adapter.NewDefaultEntryQuery(),
+		query:   NewDefaultEntryQuery(),
 		stop:    make(chan struct{}),
 		stopped: make(chan struct{}),
 	}
