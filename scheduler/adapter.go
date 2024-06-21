@@ -3,25 +3,25 @@ package scheduler
 import "fmt"
 
 type EntryQueryConfig struct {
-	tableName     string
-	idField       string
-	nameField     string
-	isActiveField string
-	cronField     string
-	nextTsField   string
-	lastTsField   string
-	messageField  string
+	TableName     string
+	IdField       string
+	NameField     string
+	IsActiveField string
+	CronField     string
+	NextTsField   string
+	LastTsField   string
+	MessageField  string
 }
 
 var defaultEntryQueryConfig = EntryQueryConfig{
-	tableName:     "barn_entry",
-	idField:       "id",
-	nameField:     "name",
-	isActiveField: "is_active",
-	cronField:     "cron",
-	nextTsField:   "next_ts",
-	lastTsField:   "last_ts",
-	messageField:  "message",
+	TableName:     "barn_entry",
+	IdField:       "id",
+	NameField:     "name",
+	IsActiveField: "is_active",
+	CronField:     "cron",
+	NextTsField:   "next_ts",
+	LastTsField:   "last_ts",
+	MessageField:  "message",
 }
 
 type EntryQuery struct {
@@ -49,64 +49,64 @@ func NewEntryQuery(c EntryQueryConfig) EntryQuery {
 				PRIMARY KEY (%s),
 				UNIQUE (%s)
 			)`,
-			c.tableName,
-			c.idField,
-			c.nameField,
-			c.isActiveField,
-			c.cronField,
-			c.nextTsField,
-			c.lastTsField,
-			c.messageField,
-			c.idField,
-			c.nameField,
+			c.TableName,
+			c.IdField,
+			c.NameField,
+			c.IsActiveField,
+			c.CronField,
+			c.NextTsField,
+			c.LastTsField,
+			c.MessageField,
+			c.IdField,
+			c.NameField,
 		),
 		selectAllQuery: fmt.Sprintf(
 			`select %s, %s, %s, %s, %s, %s, %s 
 			from %s`,
-			c.idField, c.nameField, c.isActiveField, c.cronField, c.nextTsField, c.lastTsField, c.messageField,
-			c.tableName,
+			c.IdField, c.NameField, c.IsActiveField, c.CronField, c.NextTsField, c.LastTsField, c.MessageField,
+			c.TableName,
 		),
 		selectActiveQuery: fmt.Sprintf(
 			`select %s, %s, %s, %s, %s, %s, %s 
 			from %s
 			where %s`,
-			c.idField, c.nameField, c.isActiveField, c.cronField, c.nextTsField, c.lastTsField, c.messageField,
-			c.tableName,
-			c.isActiveField,
+			c.IdField, c.NameField, c.IsActiveField, c.CronField, c.NextTsField, c.LastTsField, c.MessageField,
+			c.TableName,
+			c.IsActiveField,
 		),
 		insertQuery: fmt.Sprintf(
 			`insert into %s(%s, %s, %s, %s) 
 			values ($1, $2, $3, $4) 
 			returning %s`,
-			c.tableName,
-			c.nameField, c.cronField, c.nextTsField, c.messageField,
-			c.idField,
+			c.TableName,
+			c.NameField, c.CronField, c.NextTsField, c.MessageField,
+			c.IdField,
 		),
 		deleteQuery: fmt.Sprintf(
 			`delete from %s 
 			where %s=$1`,
-			c.tableName,
-			c.idField,
+			c.TableName,
+			c.IdField,
 		),
 		deleteAllQuery: fmt.Sprintf(
 			`delete from %s`,
-			c.tableName,
+			c.TableName,
 		),
 		updateQuery: fmt.Sprintf(
 			`update %s 
 			set %s=$1, %s=$2, %s=$3
 			where %s=$4`,
-			c.tableName,
-			c.isActiveField, c.nextTsField, c.lastTsField,
-			c.idField,
+			c.TableName,
+			c.IsActiveField, c.NextTsField, c.LastTsField,
+			c.IdField,
 		),
 		updateIsActiveQuery: fmt.Sprintf(
 			`update %s 
 			set %s=$1
 			where %s=$2`,
-			c.tableName,
-			c.isActiveField,
-			c.idField,
+			c.TableName,
+			c.IsActiveField,
+			c.IdField,
 		),
 	}
 }
