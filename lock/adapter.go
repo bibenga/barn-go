@@ -74,7 +74,7 @@ func NewLockQuery(c LockQueryConfig) LockQuery {
 		unlockQuery: fmt.Sprintf(
 			`update %s 
 			set %s = null, %s = null
-			where %s = $1 and %s = $2 and (%s is null or %s > $3)`,
+			where %s = $1 and %s = $2 and %s > $3`,
 			c.tableName,
 			c.ownerField, c.lockedAtField,
 			c.nameField, c.ownerField, c.lockedAtField, c.lockedAtField,
