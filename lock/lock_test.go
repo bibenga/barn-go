@@ -93,8 +93,8 @@ func TestTryLock(t *testing.T) {
 	_, err = db.Exec(`insert into barn_lock (name) values ('unnecessary')`)
 	assert.NoError(err)
 
-	l := NewLock(db, "barn", 1*time.Second, 10*time.Second, &DummyLockListener{})
-	captured, err := l.tryLock()
+	l := NewLock(db, "barn", 10*time.Second)
+	captured, err := l.TryLock()
 	assert.NoError(err)
 	assert.True(captured)
 	assert.True(l.locked)
@@ -117,7 +117,8 @@ func TestLogState(t *testing.T) {
 
 	db := setup(t)
 
-	l := NewLock(db, "barn", 1*time.Second, 10*time.Second, &DummyLockListener{})
-	err := l.logState()
+	l := NewLock(db, "barn", 10*time.Second)
+	state, err := l.State()
 	assert.NoError(err)
+	assert.NotNil(state)
 }

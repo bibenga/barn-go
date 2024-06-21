@@ -3,6 +3,7 @@ package lock
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"log/slog"
 	"os"
 	"time"
@@ -10,27 +11,25 @@ import (
 	"github.com/google/uuid"
 )
 
+type LockState struct {
+	Name     string
+	LockedAt *time.Time
+	Owner    *string
+}
+
 type Lock struct {
 	log      *slog.Logger
 	name     string
 	db       *sql.DB
 	query    LockQuery
-	listener LockListener
 	lockName string
 	hearbeat time.Duration
 	ttl      time.Duration
 	locked   bool
 	lockedAt *time.Time
-	stop     chan struct{}
-	stopped  chan struct{}
 }
 
-type LockListener interface {
-	OnLock()
-	OnUnlock()
-}
-
-func NewLock(db *sql.DB, lockName string, hearbeat time.Duration, ttl time.Duration, listener LockListener) *Lock {
+func NewLock(db *sql.DB, lockName string, ttl time.Duration) *Lock {
 	name, err := os.Hostname()
 	if err != nil {
 		slog.Warn("can't get hostname", "error", err)
@@ -46,110 +45,50 @@ func NewLock(db *sql.DB, lockName string, hearbeat time.Duration, ttl time.Durat
 		name:     name,
 		db:       db,
 		query:    NewDefaultLockQuery(),
-		listener: listener,
 		lockName: lockName,
-		hearbeat: 1 * time.Second,
-		ttl:      10 * time.Second,
+		hearbeat: ttl / 3,
+		ttl:      ttl,
 		locked:   false,
-		stop:     make(chan struct{}),
-		stopped:  make(chan struct{}),
+		lockedAt: nil,
 	}
 	return &lock
 }
 
+func (l *Lock) Name() string {
+	return l.name
+}
+
+func (l *Lock) LockName() string {
+	return l.lockName
+}
+
+func (l *Lock) IsLocked() bool {
+	return l.locked
+}
+
+func (l *Lock) Ttl() time.Duration {
+	return l.ttl
+}
+
+func (l *Lock) Hearbeat() time.Duration {
+	return l.hearbeat
+}
+
+func (l *Lock) LockedAt() *time.Time {
+	return l.lockedAt
+}
+
 func (l *Lock) CreateTable() error {
-	db := l.db
-	l.log.Warn("create lock table")
-	_, err := db.Exec(l.query.GetCreateTableQuery())
+	l.log.Info("create lock table")
+	_, err := l.db.Exec(l.query.GetCreateTableQuery())
 	return err
 }
 
-func (l *Lock) Start() error {
-	if err := l.create(); err != nil {
-		return err
-	}
-	go l.Run()
-	return nil
-}
-
-func (l *Lock) Stop() {
-	l.log.Info("stopping")
-	l.stop <- struct{}{}
-	<-l.stopped
-	close(l.stop)
-	close(l.stopped)
-	l.log.Info("stopped")
-}
-
-func (l *Lock) Run() {
-	if err := l.create(); err != nil {
-		panic(err)
-	}
-
-	if err := l.check(); err != nil {
-		panic(err)
-	}
-
-	check := time.NewTicker(l.hearbeat)
-	defer check.Stop()
-
-	l.log.Info("started")
-	for {
-		select {
-		case <-l.stop:
-			l.log.Info("terminate")
-			l.stopped <- struct{}{}
-			if l.locked {
-				if released, err := l.unlock(); err != nil {
-					panic(err)
-				} else {
-					if released {
-						l.onUnlock()
-					}
-				}
-			}
-			return
-		case <-check.C:
-			if err := l.check(); err != nil {
-				panic(err)
-			}
-		}
-	}
-}
-
-func (l *Lock) check() error {
-	if l.locked {
-		if confirmed, err := l.confirm(); err != nil {
-			return err
-		} else {
-			if confirmed {
-				l.log.Info("the lock is still owned me")
-			} else {
-				l.log.Warn("the lock has been acquired by someone unexpectedly")
-				l.onUnlock()
-			}
-		}
-	} else {
-		if acquired, err := l.tryLock(); err != nil {
-			return err
-		} else {
-			if acquired {
-				l.log.Info("the lock is rotten and acquired")
-				l.onLock()
-			} else {
-				return l.logState()
-			}
-		}
-	}
-	return nil
-}
-
 // create lock in the table if it doesn't exists
-func (l *Lock) create() error {
-	db := l.db
+func (l *Lock) Create() error {
 	l.log.Info("create the lock")
 
-	res, err := db.Exec(
+	res, err := l.db.Exec(
 		l.query.GetInsertQuery(),
 		l.lockName,
 	)
@@ -171,11 +110,13 @@ func (l *Lock) create() error {
 	return nil
 }
 
-func (l *Lock) tryLock() (bool, error) {
-	db := l.db
+func (l *Lock) TryLock() (bool, error) {
+	if l.locked {
+		return false, errors.New("The lock is locked")
+	}
 	lockedAt := time.Now().UTC()
 	rottenTs := lockedAt.Add(-l.ttl)
-	res, err := db.Exec(
+	res, err := l.db.Exec(
 		l.query.GetLockQuery(),
 		l.name, lockedAt,
 		l.lockName, rottenTs,
@@ -197,9 +138,12 @@ func (l *Lock) tryLock() (bool, error) {
 	}
 }
 
-func (l *Lock) lock(ctx context.Context) (bool, error) {
+func (l *Lock) Lock(ctx context.Context) (bool, error) {
+	if l.locked {
+		return false, errors.New("The lock is locked")
+	}
 	l.log.Info("lock")
-	if locked, err := l.tryLock(); err != nil {
+	if locked, err := l.TryLock(); err != nil {
 		return false, err
 	} else {
 		if locked {
@@ -214,7 +158,7 @@ func (l *Lock) lock(ctx context.Context) (bool, error) {
 		case <-ctx.Done():
 			return false, nil
 		case <-ticker.C:
-			if locked, err := l.tryLock(); err != nil {
+			if locked, err := l.TryLock(); err != nil {
 				return false, err
 			} else {
 				return locked, nil
@@ -223,11 +167,13 @@ func (l *Lock) lock(ctx context.Context) (bool, error) {
 	}
 }
 
-func (l *Lock) confirm() (bool, error) {
-	db := l.db
+func (l *Lock) Confirm() (bool, error) {
+	if !l.locked {
+		return false, errors.New("The lock is not locked")
+	}
 	lockedAt := time.Now().UTC()
 	rottenTs := time.Now().UTC().Add(-l.ttl)
-	res, err := db.Exec(
+	res, err := l.db.Exec(
 		l.query.GetConfirmQuery(),
 		l.name, lockedAt,
 		l.lockName, l.name, rottenTs,
@@ -251,90 +197,61 @@ func (l *Lock) confirm() (bool, error) {
 	}
 }
 
-func (l *Lock) unlock() (bool, error) {
-	if l.locked {
-		db := l.db
-		rottenTs := time.Now().UTC().Add(-l.ttl)
-		res, err := db.Exec(
-			l.query.GetUnlockQuery(),
-			l.lockName, l.name, rottenTs,
-		)
-		if err != nil {
-			l.log.Error("db error", "error", err)
-			return false, err
-		}
-		if rowsAffected, err := res.RowsAffected(); err != nil {
-			l.log.Error("db error", "error", err)
-			return false, err
-		} else {
-			l.log.Debug("sql", "RowsAffected", rowsAffected)
-			l.locked = false
-			l.lockedAt = nil
-			if rowsAffected == 1 {
-				l.log.Info("the lock is released")
-			} else {
-				l.log.Info("the lock was created by someone")
-			}
-			return rowsAffected == 1, nil
-		}
-	} else {
-		l.log.Info("the lock is not our")
+func (l *Lock) Unlock() (bool, error) {
+	if !l.locked {
+		return false, errors.New("The lock is not locked")
 	}
-	return false, nil
+	rottenTs := time.Now().UTC().Add(-l.ttl)
+	res, err := l.db.Exec(
+		l.query.GetUnlockQuery(),
+		l.lockName, l.name, rottenTs,
+	)
+	if err != nil {
+		l.log.Error("db error", "error", err)
+		return false, err
+	}
+	if rowsAffected, err := res.RowsAffected(); err != nil {
+		l.log.Error("db error", "error", err)
+		return false, err
+	} else {
+		l.log.Debug("sql", "RowsAffected", rowsAffected)
+		l.locked = false
+		l.lockedAt = nil
+		if rowsAffected == 1 {
+			l.log.Info("the lock is released")
+		} else {
+			l.log.Info("the lock was created by someone")
+		}
+		return rowsAffected == 1, nil
+	}
 }
 
-func (l *Lock) logState() error {
-	db := l.db
-	stmt, err := db.Prepare(l.query.GetSelectQuery())
+func (l *Lock) State() (*LockState, error) {
+	stmt, err := l.db.Prepare(l.query.GetSelectQuery())
 	if err != nil {
 		l.log.Error("cannot prepare query", "error", err)
-		return err
+		return nil, err
 	}
 	defer stmt.Close()
-	var lockedAt *time.Time
-	var owner *string
+	var state = LockState{Name: l.lockName}
 	row := stmt.QueryRow(l.lockName)
-	switch err := row.Scan(&lockedAt, &owner); err {
+	switch err := row.Scan(&state.LockedAt, &state.Owner); err {
 	case sql.ErrNoRows:
 		l.log.Error("the lock is not found")
-		return nil
+		return nil, errors.New("the lock is not found")
 	case nil:
 		lockedAtAttr := slog.Any("LockedAt", nil)
-		if lockedAt != nil {
-			lockedAtAttr.Value = slog.TimeValue(*lockedAt)
+		if state.LockedAt != nil {
+			lockedAtAttr.Value = slog.TimeValue(*state.LockedAt)
 		}
 		ownerAttr := slog.Any("Owner", nil)
-		if owner != nil {
-			ownerAttr.Value = slog.StringValue(*owner)
+		if state.Owner != nil {
+			ownerAttr.Value = slog.StringValue(*state.Owner)
 		}
 		l.log.Info("the lock is captured", lockedAtAttr, ownerAttr)
-		return nil
+		return &state, nil
 	default:
 		l.log.Error("db error", "error", err)
-		return err
+		return nil, err
 	}
 }
-
-func (l *Lock) onLock() {
-	if l.listener != nil {
-		l.listener.OnLock()
-	}
-}
-
-func (l *Lock) onUnlock() {
-	if l.listener != nil {
-		l.listener.OnUnlock()
-	}
-}
-
-type DummyLockListener struct{}
-
-func (l *DummyLockListener) OnLock() {
-	slog.Info("DUMMY: the lock is acquired")
-}
-
-func (l *DummyLockListener) OnUnlock() {
-	slog.Info("DUMMY: the lock is released")
-}
-
-var _ LockListener = &DummyLockListener{}
