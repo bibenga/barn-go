@@ -10,12 +10,6 @@ import (
 	"github.com/google/uuid"
 )
 
-type Lock struct {
-	Name     string
-	LockedAt *time.Time
-	LockedBy *string
-}
-
 type LockManager struct {
 	log      *slog.Logger
 	hostname string
@@ -289,25 +283,23 @@ func (manager *LockManager) logState() error {
 		return err
 	}
 	defer stmt.Close()
-	var dbLock Lock = Lock{Name: manager.lockName}
+	var lockedAt *time.Time
+	var lockedBy *string
 	row := stmt.QueryRow(manager.lockName)
-	switch err := row.Scan(&dbLock.LockedAt, &dbLock.LockedBy); err {
+	switch err := row.Scan(&lockedAt, &lockedBy); err {
 	case sql.ErrNoRows:
 		manager.log.Info("the lock is not found")
 		return nil
 	case nil:
-		lockedAt := slog.Any("LockedAt", nil)
-		if dbLock.LockedAt != nil {
-			// lockedAt = slog.Any("LockedAt", *dbLock.LockedAt)
-			lockedAt.Value = slog.TimeValue(*dbLock.LockedAt)
+		lockedAtAttr := slog.Any("LockedAt", nil)
+		if lockedAt != nil {
+			lockedAtAttr.Value = slog.TimeValue(*lockedAt)
 		}
-		lockedBy := slog.Any("LockedBy", nil)
-		if dbLock.LockedBy != nil {
-			// lockedBy = slog.Any("LockedBy", *dbLock.LockedBy)
-			lockedBy.Value = slog.StringValue(*dbLock.LockedBy)
+		lockedByAttr := slog.Any("LockedBy", nil)
+		if lockedBy != nil {
+			lockedByAttr.Value = slog.StringValue(*lockedBy)
 		}
-		// manager.log.Info("the lock is owned by someone", "LockedAt", dbLock.LockedAt, "LockedBy", dbLock.LockedBy)
-		manager.log.Info("the lock is captured", lockedAt, lockedBy)
+		manager.log.Info("the lock is captured", lockedAtAttr, lockedByAttr)
 		return nil
 	default:
 		manager.log.Error("db error", "error", err)
