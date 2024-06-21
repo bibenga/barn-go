@@ -80,7 +80,7 @@ func (l *LeaderElector) Run(ctx context.Context) {
 }
 
 func (l *LeaderElector) open() error {
-	if err := l.lock.Create(); err != nil {
+	if _, err := l.lock.Create(); err != nil {
 		panic(err)
 	}
 	if l.lock.IsLocked() {

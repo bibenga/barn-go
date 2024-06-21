@@ -11,12 +11,14 @@ import (
 	"github.com/google/uuid"
 )
 
+// Information about lock from DB
 type LockState struct {
 	Name     string
 	LockedAt *time.Time
 	Owner    *string
 }
 
+// Lock is the mutex entry in the database.
 type Lock struct {
 	log      *slog.Logger
 	name     string
@@ -31,9 +33,13 @@ type Lock struct {
 
 type lockOpt func(locker *Lock)
 
+// The default TTL is 60 sec
 const DefaultLockTtl = 60 * time.Second
-const DefaultLockHeartbeat = DefaultLockTtl / 3
 
+// The defaulth heartbeat interval is 20 sec
+const DefaultHeartbeat = DefaultLockTtl / 3
+
+// NewLock returns a new lock client.
 func NewLock(db *sql.DB, name string, lockName string, ttl time.Duration, opts ...lockOpt) *Lock {
 	lock := &Lock{
 		log:      slog.Default().With("lock", lockName, "name", name),
@@ -113,8 +119,8 @@ func (l *Lock) CreateTable() error {
 	return err
 }
 
-// create lock in the table if it doesn't exists
-func (l *Lock) Create() error {
+// create a lock record in DB if it doesn't exists
+func (l *Lock) Create() (bool, error) {
 	l.log.Info("create the lock")
 
 	res, err := l.db.Exec(
@@ -123,12 +129,12 @@ func (l *Lock) Create() error {
 	)
 	if err != nil {
 		l.log.Error("cannot create lock", "error", err)
-		return err
+		return false, err
 	}
 	rowsAffected, err := res.RowsAffected()
 	if err != nil {
 		l.log.Error("db error", "error", err)
-		return err
+		return false, err
 	}
 	l.log.Debug("sql", "RowsAffected", rowsAffected)
 	if rowsAffected == 1 {
@@ -136,9 +142,10 @@ func (l *Lock) Create() error {
 	} else {
 		l.log.Info("the lock was created by someone")
 	}
-	return nil
+	return rowsAffected == 1, nil
 }
 
+// Try to acquire the lock
 func (l *Lock) TryLock() (bool, error) {
 	if l.locked {
 		return false, errors.New("the lock is locked")
@@ -167,10 +174,12 @@ func (l *Lock) TryLock() (bool, error) {
 	}
 }
 
+// Acquire the lock
 func (l *Lock) Lock() (bool, error) {
 	return l.LockContext(context.Background())
 }
 
+// Acquire the lock
 func (l *Lock) LockContext(ctx context.Context) (bool, error) {
 	if l.locked {
 		return false, errors.New("the lock is locked")
@@ -200,6 +209,7 @@ func (l *Lock) LockContext(ctx context.Context) (bool, error) {
 	}
 }
 
+// Update the acquired lock data
 func (l *Lock) Confirm() (bool, error) {
 	if !l.locked {
 		return false, errors.New("the lock is not locked")
@@ -230,6 +240,7 @@ func (l *Lock) Confirm() (bool, error) {
 	}
 }
 
+// Release lock
 func (l *Lock) Unlock() (bool, error) {
 	if !l.locked {
 		return false, errors.New("the lock is not locked")
@@ -259,6 +270,7 @@ func (l *Lock) Unlock() (bool, error) {
 	}
 }
 
+// Read lock state from DB
 func (l *Lock) State() (*LockState, error) {
 	stmt, err := l.db.Prepare(l.query.GetSelectQuery())
 	if err != nil {
@@ -269,9 +281,6 @@ func (l *Lock) State() (*LockState, error) {
 	var state = LockState{Name: l.lockName}
 	row := stmt.QueryRow(l.lockName)
 	switch err := row.Scan(&state.LockedAt, &state.Owner); err {
-	case sql.ErrNoRows:
-		l.log.Error("the lock is not found")
-		return nil, errors.New("the lock is not found")
 	case nil:
 		lockedAtAttr := slog.Any("LockedAt", nil)
 		if state.LockedAt != nil {
@@ -283,6 +292,9 @@ func (l *Lock) State() (*LockState, error) {
 		}
 		l.log.Info("the lock is captured", lockedAtAttr, ownerAttr)
 		return &state, nil
+	case sql.ErrNoRows:
+		l.log.Error("the lock is not found")
+		return nil, err
 	default:
 		l.log.Error("db error", "error", err)
 		return nil, err
