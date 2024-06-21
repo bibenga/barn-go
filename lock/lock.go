@@ -112,7 +112,7 @@ func (l *Lock) Create() error {
 
 func (l *Lock) TryLock() (bool, error) {
 	if l.locked {
-		return false, errors.New("The lock is locked")
+		return false, errors.New("the lock is locked")
 	}
 	lockedAt := time.Now().UTC()
 	rottenTs := lockedAt.Add(-l.ttl)
@@ -139,8 +139,12 @@ func (l *Lock) TryLock() (bool, error) {
 }
 
 func (l *Lock) Lock(ctx context.Context) (bool, error) {
+	return l.LockContext(context.Background())
+}
+
+func (l *Lock) LockContext(ctx context.Context) (bool, error) {
 	if l.locked {
-		return false, errors.New("The lock is locked")
+		return false, errors.New("the lock is locked")
 	}
 	l.log.Info("lock")
 	if locked, err := l.TryLock(); err != nil {
@@ -169,7 +173,7 @@ func (l *Lock) Lock(ctx context.Context) (bool, error) {
 
 func (l *Lock) Confirm() (bool, error) {
 	if !l.locked {
-		return false, errors.New("The lock is not locked")
+		return false, errors.New("the lock is not locked")
 	}
 	lockedAt := time.Now().UTC()
 	rottenTs := time.Now().UTC().Add(-l.ttl)
@@ -199,7 +203,7 @@ func (l *Lock) Confirm() (bool, error) {
 
 func (l *Lock) Unlock() (bool, error) {
 	if !l.locked {
-		return false, errors.New("The lock is not locked")
+		return false, errors.New("the lock is not locked")
 	}
 	rottenTs := time.Now().UTC().Add(-l.ttl)
 	res, err := l.db.Exec(
