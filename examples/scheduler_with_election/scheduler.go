@@ -35,8 +35,6 @@ func main() {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	var shedCtx context.Context
-	var shedCtxCancel context.CancelFunc
 
 	leaderLock := lock.NewLockWithConfig(db, &lock.LockConfig{
 		Ttl:      10 * time.Second,
@@ -48,16 +46,10 @@ func main() {
 	leader := lock.NewLeaderElector(&lock.LeaderElectorConfig{
 		Lock: leaderLock,
 		OnElectedHandler: func() {
-			shedCtx, shedCtxCancel = context.WithCancel(ctx)
-			sched.StartContext(shedCtx)
+			sched.StartContext(ctx)
 		},
 		OnUnelectedHandler: func() {
-			if shedCtxCancel != nil {
-				shedCtxCancel()
-				shedCtxCancel = nil
-				// TODO:
-				// sched.WaitStop()
-			}
+			sched.Stop()
 		},
 	})
 
