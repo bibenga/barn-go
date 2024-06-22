@@ -16,25 +16,20 @@ func main() {
 	db := examples.InitDb(false)
 	defer db.Close()
 
-	sched := scheduler.NewScheduler(db, &scheduler.SchedulerConfig{
+	sched := scheduler.NewSimpleScheduler(db, &scheduler.SimpleSchedulerConfig{
+		Cron:     "*/5 * * * * *",
 		Listener: &scheduler.DummySchedulerListener{},
 	})
 	if err := sched.CreateTable(); err != nil {
 		panic(err)
 	}
-	if err := sched.DeleteAll(); err != nil {
-		panic(err)
-	}
+	// if err := sched.DeleteAll(); err != nil {
+	// 	panic(err)
+	// }
 
-	cron1 := "*/5 * * * * *"
-	message1 := "{\"type\":\"olala1\"}"
-	if err := sched.Add(&scheduler.Task{Name: "olala1", Cron: &cron1, Message: &message1}); err != nil {
-		panic(err)
-	}
-
-	// cron2 := "*/5 * * * * *"
-	// nextTs2 := time.Now().UTC().Add(-20 * time.Second)
-	// if err := sched.Add(&scheduler.Entry{Name: "olala2", Cron: &cron2, NextTs: &nextTs2}); err != nil {
+	// cron1 := "*/5 * * * * *"
+	// message1 := "{\"type\":\"olala1\"}"
+	// if err := sched.Add(&scheduler.Task{Name: "olala1", Cron: &cron1, Message: &message1}); err != nil {
 	// 	panic(err)
 	// }
 
@@ -48,6 +43,5 @@ func main() {
 	slog.Info("os signal received", "signal", s)
 
 	cancel()
-
 	sched.Stop()
 }

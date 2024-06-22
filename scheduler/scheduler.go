@@ -151,6 +151,7 @@ func (s *Scheduler) run(ctx context.Context) {
 
 	for {
 		e := s.getNext()
+		s.log.Info("next event time", "NextTs", *e.NextTs)
 		d := time.Until(*e.NextTs)
 		timer := time.NewTimer(d)
 		defer timer.Stop()
