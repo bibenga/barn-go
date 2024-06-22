@@ -7,21 +7,26 @@ import (
 	"time"
 )
 
+type LeaderHandler func()
 type LeaderListener interface {
 	OnElected()
 	OnUnelected()
 }
 
 type LeaderElectorConfig struct {
-	Log      *slog.Logger
-	Lock     *Lock
-	Listener LeaderListener
+	Log                *slog.Logger
+	Lock               *Lock
+	Listener           LeaderListener
+	OnElectedHandler   LeaderHandler
+	OnUnelectedHandler LeaderHandler
 }
 
 type LeaderElector struct {
-	log      *slog.Logger
-	lock     *Lock
-	listener LeaderListener
+	log                *slog.Logger
+	lock               *Lock
+	listener           LeaderListener
+	onElectedHandler   LeaderHandler
+	onUnelectedHandler LeaderHandler
 }
 
 func NewLeaderElector(config *LeaderElectorConfig) *LeaderElector {
@@ -38,9 +43,11 @@ func NewLeaderElector(config *LeaderElectorConfig) *LeaderElector {
 		config.Listener = &DummyLeaderListener{}
 	}
 	leader := LeaderElector{
-		log:      config.Log,
-		lock:     config.Lock,
-		listener: config.Listener,
+		log:                config.Log,
+		lock:               config.Lock,
+		listener:           config.Listener,
+		onElectedHandler:   config.OnElectedHandler,
+		onUnelectedHandler: config.OnUnelectedHandler,
 	}
 	return &leader
 }
@@ -144,11 +151,17 @@ func (l *LeaderElector) onElected() {
 	if l.listener != nil {
 		l.listener.OnElected()
 	}
+	if l.onElectedHandler != nil {
+		l.onElectedHandler()
+	}
 }
 
 func (l *LeaderElector) onUnelected() {
 	if l.listener != nil {
 		l.listener.OnUnelected()
+	}
+	if l.onUnelectedHandler != nil {
+		l.onUnelectedHandler()
 	}
 }
 

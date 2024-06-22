@@ -59,9 +59,6 @@ func NewLockWithConfig(db *sql.DB, config *LockConfig) *Lock {
 	if config == nil {
 		panic(errors.New("config is nil"))
 	}
-	if config.Log == nil {
-		config.Log = slog.Default().With("lock", config.LockName, "name", config.Name)
-	}
 	if config.Name == "" {
 		name, err := os.Hostname()
 		if err != nil {
@@ -90,6 +87,18 @@ func NewLockWithConfig(db *sql.DB, config *LockConfig) *Lock {
 	}
 	if config.Hearbeat == 0 {
 		config.Hearbeat = config.Ttl / 3
+	}
+	if config.Log == nil {
+		config.Log = slog.Default().With(
+			"lock", slog.GroupValue(
+				slog.String("lock", config.LockName),
+				slog.String("name", config.Name),
+			),
+			"lock", slog.GroupValue(
+				slog.String("a", config.LockName),
+				slog.String("b", config.Name),
+			),
+		)
 	}
 
 	lock := &Lock{
