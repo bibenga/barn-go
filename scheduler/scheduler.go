@@ -40,6 +40,7 @@ func (e Task) LogValue() slog.Value {
 }
 
 type TaskMap map[int]*Task
+type TaskList []*Task
 
 type SchedulerListener interface {
 	Process(name string, moment time.Time, message *string) error
@@ -312,31 +313,31 @@ func (s *Scheduler) getTasks() (TaskMap, error) {
 		return nil, err
 	}
 	for rows.Next() {
-		var e Task = Task{}
-		err := rows.Scan(&e.Id, &e.Name, &e.IsActive, &e.Cron, &e.NextTs, &e.LastTs, &e.Message)
+		var t Task = Task{}
+		err := rows.Scan(&t.Id, &t.Name, &t.IsActive, &t.Cron, &t.NextTs, &t.LastTs, &t.Message)
 		if err != nil {
 			return nil, err
 		}
-		if e.IsActive {
-			if e.Cron == nil && e.NextTs == nil {
+		if t.IsActive {
+			if t.Cron == nil && t.NextTs == nil {
 				// we don't know when to do...
-				s.log.Warn("invalid task", "task", e)
-				s.deactivate(&e)
+				s.log.Warn("invalid task", "task", t)
+				s.deactivate(&t)
 			} else {
-				if e.NextTs == nil {
-					nextTs, err := gronx.NextTick(*e.Cron, true)
+				if t.NextTs == nil {
+					nextTs, err := gronx.NextTick(*t.Cron, true)
 					if err != nil {
-						s.log.Info("invalid cron string", "task", e)
+						s.log.Info("invalid cron string", "task", t)
 						continue
 					}
-					e.NextTs = &nextTs
-					s.update(&e)
+					t.NextTs = &nextTs
+					s.update(&t)
 				}
-				s.log.Info("the task is active", "task", e)
-				entries[e.Id] = &e
+				s.log.Info("the task is active", "task", t)
+				entries[t.Id] = &t
 			}
 		} else {
-			s.log.Info("the task is inactive", "task", e)
+			s.log.Info("the task is inactive", "task", t)
 		}
 	}
 	return entries, nil

@@ -14,16 +14,7 @@ type LockQueryConfig struct {
 	OwnerField    string
 }
 
-type LockQuery struct {
-	CreateTableQuery string
-	InsertQuery      string
-	SelectQuery      string
-	LockQuery        string
-	ConfirmQuery     string
-	UnlockQuery      string
-}
-
-func NewLockQuery(c LockQueryConfig) LockQuery {
+func (c *LockQueryConfig) init() {
 	if c.TableName == "" {
 		c.TableName = DefaultTableName
 	}
@@ -36,6 +27,19 @@ func NewLockQuery(c LockQueryConfig) LockQuery {
 	if c.OwnerField == "" {
 		c.OwnerField = DefaultOwnerField
 	}
+}
+
+type LockQuery struct {
+	CreateTableQuery string
+	InsertQuery      string
+	SelectQuery      string
+	LockQuery        string
+	ConfirmQuery     string
+	UnlockQuery      string
+}
+
+func NewLockQuery(c LockQueryConfig) LockQuery {
+	c.init()
 	return LockQuery{
 		CreateTableQuery: fmt.Sprintf(
 			`CREATE TABLE IF NOT EXISTS %s  (

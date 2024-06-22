@@ -22,17 +22,7 @@ type TaskQueryConfig struct {
 	MessageField  string
 }
 
-type TaskQuery struct {
-	CreateTableQuery    string
-	SelectQuery         string
-	InsertQuery         string
-	DeleteQuery         string
-	DeleteAllQuery      string
-	UpdateQuery         string
-	UpdateIsActiveQuery string
-}
-
-func NewTaskQuery(c TaskQueryConfig) TaskQuery {
+func (c *TaskQueryConfig) init() {
 	if c.TableName == "" {
 		c.TableName = DefaultTableName
 	}
@@ -57,6 +47,20 @@ func NewTaskQuery(c TaskQueryConfig) TaskQuery {
 	if c.MessageField == "" {
 		c.MessageField = DefaultMessageField
 	}
+}
+
+type TaskQuery struct {
+	CreateTableQuery    string
+	SelectQuery         string
+	InsertQuery         string
+	DeleteQuery         string
+	DeleteAllQuery      string
+	UpdateQuery         string
+	UpdateIsActiveQuery string
+}
+
+func NewTaskQuery(c TaskQueryConfig) TaskQuery {
+	c.init()
 	return TaskQuery{
 		CreateTableQuery: fmt.Sprintf(
 			`CREATE TABLE IF NOT EXISTS %s (
@@ -126,4 +130,45 @@ func NewTaskQuery(c TaskQueryConfig) TaskQuery {
 
 func NewDefaultTaskQuery() TaskQuery {
 	return NewTaskQuery(TaskQueryConfig{})
+}
+
+type SimpleTaskQuery struct {
+	CreateTableQuery      string
+	SelectForInitQuery    string
+	SelectForProcessQuery string
+	UpdateQuery           string
+	UpdateIsActiveQuery   string
+}
+
+func NewSimpleTaskQuery(c TaskQueryConfig) SimpleTaskQuery {
+	c.init()
+	q := NewTaskQuery(c)
+	return SimpleTaskQuery{
+		CreateTableQuery: q.CreateTableQuery,
+		SelectForInitQuery: fmt.Sprintf(
+			`select %s, %s, %s, %s, %s, %s, %s 
+			from %s
+			where %s and %s is null
+			for update`,
+			c.IdField, c.NameField, c.IsActiveField, c.CronField, c.NextTsField, c.LastTsField, c.MessageField,
+			c.TableName,
+			c.IsActiveField, c.NextTsField,
+		),
+		SelectForProcessQuery: fmt.Sprintf(
+			`select %s, %s, %s, %s, %s, %s, %s 
+			from %s
+			where %s and %s < current_timestamp
+			limit $1
+			for update`,
+			c.IdField, c.NameField, c.IsActiveField, c.CronField, c.NextTsField, c.LastTsField, c.MessageField,
+			c.TableName,
+			c.IsActiveField, c.NextTsField,
+		),
+		UpdateQuery:         q.UpdateQuery,
+		UpdateIsActiveQuery: q.UpdateIsActiveQuery,
+	}
+}
+
+func NewDefaultSimpleTaskQuery() SimpleTaskQuery {
+	return NewSimpleTaskQuery(TaskQueryConfig{})
 }

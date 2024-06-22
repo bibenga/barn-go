@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"log/slog"
 	"sync"
 	"sync/atomic"
@@ -14,7 +15,7 @@ import (
 
 type SimpleSchedulerConfig struct {
 	Log      *slog.Logger
-	Query    *TaskQuery
+	Query    *SimpleTaskQuery
 	Cron     string
 	Listener SchedulerListener
 }
@@ -23,7 +24,7 @@ type SimpleScheduler struct {
 	log      *slog.Logger
 	listener SchedulerListener
 	db       *sql.DB
-	query    *TaskQuery
+	query    *SimpleTaskQuery
 	running  atomic.Bool
 	cancel   context.CancelFunc
 	stoped   sync.WaitGroup
@@ -39,7 +40,7 @@ func NewSimpleScheduler(db *sql.DB, config *SimpleSchedulerConfig) *SimpleSchedu
 		panic(errors.New("config is nil"))
 	}
 	if config.Query == nil {
-		query := NewDefaultTaskQuery()
+		query := NewDefaultSimpleTaskQuery()
 		config.Query = &query
 	}
 	if config.Cron == "" {
@@ -105,8 +106,6 @@ func (s *SimpleScheduler) run(ctx context.Context) {
 
 	defer s.stoped.Done()
 
-	s.initNextTs()
-
 	if nextTs, err := gronx.NextTick(s.cron, true); err != nil {
 		panic(err)
 	} else {
@@ -124,7 +123,10 @@ func (s *SimpleScheduler) run(ctx context.Context) {
 			s.log.Info("terminate")
 			return
 		case <-timer.C:
-			if err := s.process(); err != nil {
+			if err := s.initTasks(); err != nil {
+				panic(err)
+			}
+			if err := s.processTasks(); err != nil {
 				panic(err)
 			}
 			if nextTs, err := gronx.NextTick(s.cron, false); err != nil {
@@ -136,14 +138,45 @@ func (s *SimpleScheduler) run(ctx context.Context) {
 	}
 }
 
-func (s *SimpleScheduler) initNextTs() error {
-	s.log.Info("process")
+func (s *SimpleScheduler) initTasks() error {
+	s.log.Info("initTasks")
 
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
+
+	stmt, err := tx.Prepare(s.query.SelectForInitQuery)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	rows, err := stmt.Query()
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var t Task = Task{}
+		err := rows.Scan(&t.Id, &t.Name, &t.IsActive, &t.Cron, &t.NextTs, &t.LastTs, &t.Message)
+		if err != nil {
+			return err
+		}
+		if t.IsActive {
+			if t.Cron == nil && t.NextTs == nil {
+				s.log.Warn("invalid task", "task", t)
+				s.deactivate(tx, t)
+			} else if t.Cron != nil && t.NextTs == nil {
+				if nextTs, err := gronx.NextTick(*t.Cron, true); err != nil {
+					return err
+				} else {
+					t.NextTs = &nextTs
+					s.update(tx, &t)
+				}
+			}
+		}
+	}
 
 	if err = tx.Commit(); err != nil {
 		return err
@@ -151,7 +184,7 @@ func (s *SimpleScheduler) initNextTs() error {
 	return nil
 }
 
-func (s *SimpleScheduler) process() error {
+func (s *SimpleScheduler) processTasks() error {
 	s.log.Info("process")
 
 	tx, err := s.db.Begin()
@@ -160,8 +193,119 @@ func (s *SimpleScheduler) process() error {
 	}
 	defer tx.Rollback()
 
+	stmt, err := tx.Prepare(s.query.SelectForProcessQuery)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	rows, err := stmt.Query(10)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var t Task = Task{}
+		err := rows.Scan(&t.Id, &t.Name, &t.IsActive, &t.Cron, &t.NextTs, &t.LastTs, &t.Message)
+		if err != nil {
+			return err
+		}
+		if t.IsActive {
+			if err := s.listener.Process(t.Name, *t.NextTs, t.Message); err != nil {
+				return err
+			}
+
+			if t.Cron == nil && t.NextTs == nil {
+				s.log.Warn("invalid task", "task", t)
+				s.deactivate(tx, t)
+			} else if t.Cron == nil {
+				s.deactivate(tx, t)
+			} else {
+				if nextTs, err := gronx.NextTick(*t.Cron, false); err != nil {
+					return err
+				} else {
+					t.NextTs = &nextTs
+					s.update(tx, &t)
+				}
+			}
+		} else {
+			s.log.Info("the task is inactive", "task", t)
+		}
+	}
+
 	if err = tx.Commit(); err != nil {
 		return err
+	}
+	return nil
+}
+
+func (s *SimpleScheduler) getTasks(tx *sql.Tx, forInit bool, limit int) (TaskList, error) {
+	stmt, err := tx.Prepare(s.query.SelectForInitQuery)
+	if err != nil {
+		return nil, err
+	}
+	defer stmt.Close()
+
+	var entries TaskList
+
+	rows, err := stmt.Query()
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var t Task = Task{}
+		err := rows.Scan(&t.Id, &t.Name, &t.IsActive, &t.Cron, &t.NextTs, &t.LastTs, &t.Message)
+		if err != nil {
+			return nil, err
+		}
+		if t.IsActive {
+			if t.Cron == nil && t.NextTs == nil {
+				s.log.Warn("invalid task", "task", t)
+				s.deactivate(tx, t)
+			} else {
+				entries = append(entries, &t)
+			}
+		} else {
+			s.log.Info("the task is inactive", "task", t)
+		}
+	}
+	return entries, nil
+}
+
+func (s *SimpleScheduler) update(tx *sql.Tx, task *Task) error {
+	s.log.Info("update the task", "task", task)
+	res, err := tx.Exec(
+		s.query.UpdateQuery,
+		task.IsActive, task.NextTs, task.LastTs, task.Id,
+	)
+	if err != nil {
+		return err
+	}
+	rowsAffected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rowsAffected != 1 {
+		return fmt.Errorf("we inside select for update, what's happened?")
+	}
+	return nil
+}
+
+func (s *SimpleScheduler) deactivate(tx *sql.Tx, task Task) error {
+	task.IsActive = false
+	s.log.Info("deactivate the task", "task", task)
+	res, err := tx.Exec(
+		s.query.UpdateIsActiveQuery,
+		false, task.Id,
+	)
+	if err != nil {
+		return err
+	}
+	rowsAffected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rowsAffected != 1 {
+		return fmt.Errorf("we inside select for update, what's happened?")
 	}
 	return nil
 }
