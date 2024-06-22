@@ -9,7 +9,6 @@ import (
 	"os/signal"
 	"time"
 
-	"github.com/bibenga/barn-go/lock"
 	"github.com/bibenga/barn-go/scheduler"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"
@@ -90,16 +89,8 @@ func main() {
 	// 	slog.Error("db error", "error", err)
 	// 	panic(err)
 	// }
-	scheduler.StartContext(ctx)
 
-	dbLock := lock.NewLock(db, "host1", "barn", 10*time.Second, lock.WithRandomName())
-	err = dbLock.CreateTable()
-	if err != nil {
-		slog.Error("db error", "error", err)
-		panic(err)
-	}
-	// leader := lock.NewLeaderElector(dbLock, &lock.DummyLeaderListener{})
-	// leader.Start()
+	scheduler.StartContext(ctx)
 
 	osSignal := make(chan os.Signal, 1)
 	signal.Notify(osSignal, os.Interrupt)
@@ -108,7 +99,4 @@ func main() {
 
 	cancel()
 	time.Sleep(1 * time.Second)
-
-	// leader.Stop()
-	// scheduler.Stop()
 }
