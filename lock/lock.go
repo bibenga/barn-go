@@ -258,9 +258,11 @@ func (l *Lock) Confirm() (bool, error) {
 		l.log.Debug("sql", "RowsAffected", rowsAffected)
 		if rowsAffected == 1 {
 			l.lockedAt = &lockedAt
+			l.log.Info("the lock is confirmed")
 		} else {
 			l.locked = false
 			l.lockedAt = nil
+			l.log.Warn("the lock is not confirmed")
 		}
 		return l.locked, nil
 	}
@@ -290,7 +292,7 @@ func (l *Lock) Unlock() (bool, error) {
 		if rowsAffected == 1 {
 			l.log.Info("the lock is released")
 		} else {
-			l.log.Info("the lock was created by someone")
+			l.log.Warn("the lock cannot be released")
 		}
 		return rowsAffected == 1, nil
 	}

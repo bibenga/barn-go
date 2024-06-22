@@ -108,10 +108,7 @@ func (l *LeaderElector) hearbeat() error {
 		if confirmed, err := l.lock.Confirm(); err != nil {
 			return err
 		} else {
-			if confirmed {
-				l.log.Info("the lock is still owned me")
-			} else {
-				l.log.Warn("the lock has been acquired by someone unexpectedly")
+			if !confirmed {
 				l.onUnelected()
 			}
 		}

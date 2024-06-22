@@ -17,7 +17,10 @@ func main() {
 	db := examples.InitDb(false)
 	defer db.Close()
 
-	l := lock.NewLock(db)
+	l := lock.NewLockWithConfig(db, &lock.LockConfig{
+		Ttl:      10 * time.Second,
+		Hearbeat: 1 * time.Second,
+	})
 	if err := l.CreateTable(); err != nil {
 		panic(err)
 	}
