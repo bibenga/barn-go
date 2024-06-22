@@ -20,36 +20,22 @@ func main() {
 	sched := scheduler.NewScheduler(db, &scheduler.SchedulerConfig{
 		Listener: &scheduler.DummySchedulerListener{},
 	})
-
-	err := sched.CreateTable()
-	if err != nil {
+	if err := sched.CreateTable(); err != nil {
 		panic(err)
 	}
-
-	err = sched.DeleteAll()
-	if err != nil {
+	if err := sched.DeleteAll(); err != nil {
 		panic(err)
 	}
 
 	cron1 := "*/5 * * * * *"
 	message1 := "{\"type\":\"olala1\"}"
-	err = sched.Add(&scheduler.Entry{
-		Name:    "olala1",
-		Cron:    &cron1,
-		Message: &message1,
-	})
-	if err != nil {
+	if err := sched.Add(&scheduler.Entry{Name: "olala1", Cron: &cron1, Message: &message1}); err != nil {
 		panic(err)
 	}
 
 	// cron2 := "*/5 * * * * *"
 	// nextTs2 := time.Now().UTC().Add(-20 * time.Second)
-	// err = sched.Add(&scheduler.Entry{
-	// 	Name:   "olala2",
-	// 	Cron:   &cron2,
-	// 	NextTs: &nextTs2,
-	// })
-	// if err != nil {
+	// if err := sched.Add(&scheduler.Entry{Name: "olala2", Cron: &cron2, NextTs: &nextTs2}); err != nil {
 	// 	panic(err)
 	// }
 
