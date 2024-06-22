@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/adhocore/gronx"
@@ -57,6 +59,9 @@ type Scheduler struct {
 	query      *TaskQuery
 	tasks      TaskMap
 	reloadTask Task
+	running    atomic.Bool
+	cancel     context.CancelFunc
+	stoped     sync.WaitGroup
 }
 
 func NewScheduler(db *sql.DB, config *SchedulerConfig) *Scheduler {
@@ -106,11 +111,38 @@ func (s *Scheduler) Start() {
 }
 
 func (s *Scheduler) StartContext(ctx context.Context) {
-	go s.Run(ctx)
+	if s.running.Load() {
+		panic(errors.New("already running"))
+	}
+
+	s.stoped.Add(1)
+	ctx, s.cancel = context.WithCancel(ctx)
+	go s.run(ctx)
 }
 
-func (s *Scheduler) Run(ctx context.Context) {
-	s.log.Info("started")
+func (s *Scheduler) Stop() {
+	if !s.running.Load() {
+		panic(errors.New("is not running"))
+	}
+
+	s.log.Debug("Stopping")
+	s.cancel()
+	s.stoped.Wait()
+	s.log.Debug("Stopped")
+}
+
+func (s *Scheduler) run(ctx context.Context) {
+	s.log.Debug("scheduler stated")
+	defer func() {
+		s.log.Debug("scheduler terminated")
+	}()
+
+	s.running.Store(true)
+	defer func() {
+		s.running.Store(false)
+	}()
+
+	defer s.stoped.Done()
 
 	if err := s.reload(); err != nil {
 		s.log.Error("db", "error", err)

@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -27,6 +29,9 @@ type LeaderElector struct {
 	listener           LeaderListener
 	onElectedHandler   LeaderHandler
 	onUnelectedHandler LeaderHandler
+	running            atomic.Bool
+	cancel             context.CancelFunc
+	stoped             sync.WaitGroup
 }
 
 func NewLeaderElector(config *LeaderElectorConfig) *LeaderElector {
@@ -57,10 +62,39 @@ func (l *LeaderElector) Start() {
 }
 
 func (l *LeaderElector) StartContext(ctx context.Context) {
-	go l.Run(ctx)
+	if l.running.Load() {
+		panic(errors.New("already running"))
+	}
+
+	l.stoped.Add(1)
+	ctx, l.cancel = context.WithCancel(ctx)
+	go l.run(ctx)
 }
 
-func (l *LeaderElector) Run(ctx context.Context) {
+func (l *LeaderElector) Stop() {
+	if !l.running.Load() {
+		panic(errors.New("is not running"))
+	}
+
+	l.log.Debug("Stopping")
+	l.cancel()
+	l.stoped.Wait()
+	l.log.Debug("Stopped")
+}
+
+func (l *LeaderElector) run(ctx context.Context) {
+	l.log.Debug("leader elector stated")
+	defer func() {
+		l.log.Debug("leader elector terminated")
+	}()
+
+	l.running.Store(true)
+	defer func() {
+		l.running.Store(false)
+	}()
+
+	defer l.stoped.Done()
+
 	if err := l.open(); err != nil {
 		panic(err)
 	}

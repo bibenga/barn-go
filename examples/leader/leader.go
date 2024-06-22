@@ -38,5 +38,6 @@ func main() {
 	slog.Info("os signal received", "signal", s)
 
 	cancel()
-	time.Sleep(1 * time.Second)
+
+	leader.Stop()
 }
