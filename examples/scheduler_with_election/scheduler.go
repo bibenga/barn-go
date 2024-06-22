@@ -34,6 +34,10 @@ func main() {
 		panic(err)
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
+	var shedCtx context.Context
+	var shedCtxCancel context.CancelFunc
+
 	leaderLock := lock.NewLockWithConfig(db, &lock.LockConfig{
 		Ttl:      10 * time.Second,
 		Hearbeat: 1 * time.Second,
@@ -44,17 +48,18 @@ func main() {
 	leader := lock.NewLeaderElector(&lock.LeaderElectorConfig{
 		Lock: leaderLock,
 		OnElectedHandler: func() {
-
+			shedCtx, shedCtxCancel = context.WithCancel(ctx)
+			sched.StartContext(shedCtx)
 		},
 		OnUnelectedHandler: func() {
-
+			if shedCtxCancel != nil {
+				shedCtxCancel()
+				shedCtxCancel = nil
+			}
 		},
 	})
 
-	ctx, cancel := context.WithCancel(context.Background())
-
 	leader.StartContext(ctx)
-	sched.StartContext(ctx)
 
 	osSignal := make(chan os.Signal, 1)
 	signal.Notify(osSignal, os.Interrupt)
