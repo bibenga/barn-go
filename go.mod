@@ -6,7 +6,6 @@ require (
 	github.com/adhocore/gronx v1.8.1
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.6.0
-	github.com/mattn/go-sqlite3 v1.14.22
 	github.com/mcosta74/pgx-slog v0.3.1
 	github.com/stretchr/testify v1.9.0
 )
