@@ -2,7 +2,7 @@ package scheduler
 
 import "fmt"
 
-const DefaultTableName string = "barn_entry"
+const DefaultTableName string = "barn_task"
 const DefaultIdField string = "id"
 const DefaultNameField string = "name"
 const DefaultIsActiveField string = "is_active"
@@ -11,7 +11,7 @@ const DefaultNextTsField string = "next_ts"
 const DefaultLastTsField string = "last_ts"
 const DefaultMessageField string = "message"
 
-type EntryQueryConfig struct {
+type TaskQueryConfig struct {
 	TableName     string
 	IdField       string
 	NameField     string
@@ -22,7 +22,7 @@ type EntryQueryConfig struct {
 	MessageField  string
 }
 
-type EntryQuery struct {
+type TaskQuery struct {
 	CreateTableQuery    string
 	SelectQuery         string
 	InsertQuery         string
@@ -32,7 +32,7 @@ type EntryQuery struct {
 	UpdateIsActiveQuery string
 }
 
-func NewEntryQuery(c EntryQueryConfig) EntryQuery {
+func NewTaskQuery(c TaskQueryConfig) TaskQuery {
 	if c.TableName == "" {
 		c.TableName = DefaultTableName
 	}
@@ -57,7 +57,7 @@ func NewEntryQuery(c EntryQueryConfig) EntryQuery {
 	if c.MessageField == "" {
 		c.MessageField = DefaultMessageField
 	}
-	return EntryQuery{
+	return TaskQuery{
 		CreateTableQuery: fmt.Sprintf(
 			`CREATE TABLE IF NOT EXISTS %s (
 				%s SERIAL NOT NULL, 
@@ -124,6 +124,6 @@ func NewEntryQuery(c EntryQueryConfig) EntryQuery {
 	}
 }
 
-func NewDefaultEntryQuery() EntryQuery {
-	return NewEntryQuery(EntryQueryConfig{})
+func NewDefaultTaskQuery() TaskQuery {
+	return NewTaskQuery(TaskQueryConfig{})
 }

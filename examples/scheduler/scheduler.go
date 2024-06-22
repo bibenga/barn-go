@@ -29,7 +29,7 @@ func main() {
 
 	cron1 := "*/5 * * * * *"
 	message1 := "{\"type\":\"olala1\"}"
-	if err := sched.Add(&scheduler.Entry{Name: "olala1", Cron: &cron1, Message: &message1}); err != nil {
+	if err := sched.Add(&scheduler.Task{Name: "olala1", Cron: &cron1, Message: &message1}); err != nil {
 		panic(err)
 	}
 

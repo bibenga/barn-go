@@ -13,7 +13,7 @@ import (
 	"github.com/adhocore/gronx"
 )
 
-type Entry struct {
+type Task struct {
 	Id       int
 	Name     string
 	IsActive bool
@@ -23,7 +23,7 @@ type Entry struct {
 	Message  *string
 }
 
-func (e Entry) LogValue() slog.Value {
+func (e Task) LogValue() slog.Value {
 	// return slog.AnyValue(computeExpensiveValue(e.arg))
 	var args []slog.Attr
 	args = append(args, slog.Int("Id", int(e.Id)))
@@ -37,7 +37,7 @@ func (e Entry) LogValue() slog.Value {
 	return slog.GroupValue(args...)
 }
 
-type EntryMap map[int]*Entry
+type TaskMap map[int]*Task
 
 type SchedulerListener interface {
 	Process(name string, moment time.Time, message *string) error
@@ -45,18 +45,18 @@ type SchedulerListener interface {
 
 type SchedulerConfig struct {
 	Log        *slog.Logger
-	Query      *EntryQuery
+	Query      *TaskQuery
 	ReloadCron string
 	Listener   SchedulerListener
 }
 
 type Scheduler struct {
-	log         *slog.Logger
-	listener    SchedulerListener
-	db          *sql.DB
-	query       *EntryQuery
-	entries     EntryMap
-	reloadEntry Entry
+	log        *slog.Logger
+	listener   SchedulerListener
+	db         *sql.DB
+	query      *TaskQuery
+	tasks      TaskMap
+	reloadTask Task
 }
 
 func NewScheduler(db *sql.DB, config *SchedulerConfig) *Scheduler {
@@ -67,7 +67,7 @@ func NewScheduler(db *sql.DB, config *SchedulerConfig) *Scheduler {
 		panic(errors.New("config is nil"))
 	}
 	if config.Query == nil {
-		query := NewDefaultEntryQuery()
+		query := NewDefaultTaskQuery()
 		config.Query = &query
 	}
 	if config.ReloadCron == "" {
@@ -84,8 +84,8 @@ func NewScheduler(db *sql.DB, config *SchedulerConfig) *Scheduler {
 		listener: config.Listener,
 		db:       db,
 		query:    config.Query,
-		entries:  make(EntryMap),
-		reloadEntry: Entry{
+		tasks:    make(TaskMap),
+		reloadTask: Task{
 			Id:       math.MinInt,
 			Name:     "<reload>",
 			IsActive: true,
@@ -125,16 +125,16 @@ func (s *Scheduler) Run(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			s.log.Info("terminate")
-			clear(s.entries)
+			clear(s.tasks)
 			return
 		case <-timer.C:
-			if e == &s.reloadEntry {
+			if e == &s.reloadTask {
 				if err := s.reload(); err != nil {
 					s.log.Error("db", "error", err)
 					panic(err)
 				}
 			} else {
-				if err := s.processEntry(e); err != nil {
+				if err := s.processTask(e); err != nil {
 					s.log.Error("db", "error", err)
 				}
 			}
@@ -145,7 +145,7 @@ func (s *Scheduler) Run(ctx context.Context) {
 					panic(err)
 				} else {
 					e.NextTs = &nextTs
-					if e != &s.reloadEntry {
+					if e != &s.reloadTask {
 						s.update(e)
 					}
 				}
@@ -157,58 +157,58 @@ func (s *Scheduler) Run(ctx context.Context) {
 func (s *Scheduler) reload() error {
 	s.log.Info("reload")
 
-	if s.reloadEntry.NextTs == nil {
-		if nextTs, err := gronx.NextTick(*s.reloadEntry.Cron, true); err != nil {
+	if s.reloadTask.NextTs == nil {
+		if nextTs, err := gronx.NextTick(*s.reloadTask.Cron, true); err != nil {
 			return err
 		} else {
-			s.reloadEntry.NextTs = &nextTs
+			s.reloadTask.NextTs = &nextTs
 		}
 	}
 
-	entries, err := s.getEntries()
+	tasks, err := s.getTasks()
 	if err != nil {
 		return err
 	}
 
-	for id, newEntry := range entries {
-		if oldEntry, ok := s.entries[id]; ok {
+	for id, newTask := range tasks {
+		if oldTask, ok := s.tasks[id]; ok {
 			// exists
-			if s.IsChanged(oldEntry, newEntry) {
+			if s.IsChanged(oldTask, newTask) {
 				// changed
-				s.log.Info("changed entry", "entry", newEntry)
+				s.log.Info("changed task", "task", newTask)
 				// s.entries[id] = newEntry
-				s.entries[id] = newEntry
+				s.tasks[id] = newTask
 			} else {
-				s.log.Info("unchanged entry", "entry", newEntry)
-				oldEntry.Name = newEntry.Name
-				oldEntry.Message = newEntry.Message
+				s.log.Info("unchanged task", "task", newTask)
+				oldTask.Name = newTask.Name
+				oldTask.Message = newTask.Message
 			}
 		} else {
 			// added
-			s.log.Info("new entry", "entry", newEntry.Id)
-			s.entries[id] = newEntry
+			s.log.Info("new task", "task", newTask.Id)
+			s.tasks[id] = newTask
 		}
-		if newEntry.NextTs == nil {
-			if nextTs, err := gronx.NextTick(*newEntry.Cron, true); err != nil {
+		if newTask.NextTs == nil {
+			if nextTs, err := gronx.NextTick(*newTask.Cron, true); err != nil {
 				return err
 			} else {
-				newEntry.NextTs = &nextTs
-				s.update(newEntry)
+				newTask.NextTs = &nextTs
+				s.update(newTask)
 			}
 		}
 	}
 
-	for id, oldEntry := range s.entries {
-		if _, ok := entries[id]; !ok {
-			s.log.Info("deleted entry", "entry", oldEntry.Id)
-			delete(s.entries, oldEntry.Id)
+	for id, oldTask := range s.tasks {
+		if _, ok := tasks[id]; !ok {
+			s.log.Info("deleted task", "task", oldTask.Id)
+			delete(s.tasks, oldTask.Id)
 		}
 	}
 
 	return nil
 }
 
-func (s *Scheduler) IsChanged(oldEntry *Entry, newEntry *Entry) bool {
+func (s *Scheduler) IsChanged(oldEntry *Task, newEntry *Task) bool {
 	if oldEntry.Cron != nil && newEntry.Cron != nil {
 		if *oldEntry.Cron != *newEntry.Cron {
 			return true
@@ -228,36 +228,36 @@ func (s *Scheduler) IsChanged(oldEntry *Entry, newEntry *Entry) bool {
 	return false
 }
 
-func (s *Scheduler) getNext() *Entry {
+func (s *Scheduler) getNext() *Task {
 	// yes, we should use heap, but I'm lazy
-	var next *Entry = &s.reloadEntry
-	for _, entry := range s.entries {
-		if entry.NextTs.Before(*next.NextTs) {
-			next = entry
+	var next *Task = &s.reloadTask
+	for _, task := range s.tasks {
+		if task.NextTs.Before(*next.NextTs) {
+			next = task
 		}
 	}
 	return next
 }
 
-func (s *Scheduler) processEntry(entry *Entry) error {
-	if entry != nil {
+func (s *Scheduler) processTask(task *Task) error {
+	if task != nil {
 		// process
-		s.log.Info("tik ", "entry", entry.Id, "nextTs", entry.NextTs)
-		s.listener.Process(entry.Name, *entry.NextTs, entry.Message)
+		s.log.Info("tik ", "task", task.Id, "nextTs", task.NextTs)
+		s.listener.Process(task.Name, *task.NextTs, task.Message)
 		// calculate next time
-		if entry.Cron != nil {
-			nextTs, err := gronx.NextTick(*entry.Cron, false)
+		if task.Cron != nil {
+			nextTs, err := gronx.NextTick(*task.Cron, false)
 			if err != nil {
-				s.log.Info("cron is invalid", "entry", entry)
-				entry.IsActive = false
+				s.log.Info("cron is invalid", "task", task)
+				task.IsActive = false
 			} else {
-				entry.LastTs = entry.NextTs
-				entry.NextTs = &nextTs
+				task.LastTs = task.NextTs
+				task.NextTs = &nextTs
 			}
 		} else {
-			entry.IsActive = false
+			task.IsActive = false
 		}
-		err := s.update(entry)
+		err := s.update(task)
 		if err != nil {
 			return err
 		}
@@ -265,21 +265,21 @@ func (s *Scheduler) processEntry(entry *Entry) error {
 	return nil
 }
 
-func (s *Scheduler) getEntries() (EntryMap, error) {
+func (s *Scheduler) getTasks() (TaskMap, error) {
 	stmt, err := s.db.Prepare(s.query.SelectQuery)
 	if err != nil {
 		return nil, err
 	}
 	defer stmt.Close()
 
-	entries := make(EntryMap)
+	entries := make(TaskMap)
 
 	rows, err := stmt.Query()
 	if err != nil {
 		return nil, err
 	}
 	for rows.Next() {
-		var e Entry = Entry{}
+		var e Task = Task{}
 		err := rows.Scan(&e.Id, &e.Name, &e.IsActive, &e.Cron, &e.NextTs, &e.LastTs, &e.Message)
 		if err != nil {
 			return nil, err
@@ -287,33 +287,33 @@ func (s *Scheduler) getEntries() (EntryMap, error) {
 		if e.IsActive {
 			if e.Cron == nil && e.NextTs == nil {
 				// we don't know when to do...
-				s.log.Warn("invalid entry", "entry", e)
+				s.log.Warn("invalid task", "task", e)
 				s.deactivate(&e)
 			} else {
 				if e.NextTs == nil {
 					nextTs, err := gronx.NextTick(*e.Cron, true)
 					if err != nil {
-						s.log.Info("invalid cron string", "entry", e)
+						s.log.Info("invalid cron string", "task", e)
 						continue
 					}
 					e.NextTs = &nextTs
 					s.update(&e)
 				}
-				s.log.Info("the entry is active", "entry", e)
+				s.log.Info("the task is active", "task", e)
 				entries[e.Id] = &e
 			}
 		} else {
-			s.log.Info("the entry is inactive", "entry", e)
+			s.log.Info("the task is inactive", "task", e)
 		}
 	}
 	return entries, nil
 }
 
-func (s *Scheduler) update(entry *Entry) error {
-	s.log.Info("update the entry", "entry", entry)
+func (s *Scheduler) update(task *Task) error {
+	s.log.Info("update the task", "task", task)
 	res, err := s.db.Exec(
 		s.query.UpdateQuery,
-		entry.IsActive, entry.NextTs, entry.LastTs, entry.Id,
+		task.IsActive, task.NextTs, task.LastTs, task.Id,
 	)
 	if err != nil {
 		return err
@@ -329,12 +329,12 @@ func (s *Scheduler) update(entry *Entry) error {
 	return nil
 }
 
-func (s *Scheduler) deactivate(entry *Entry) error {
-	entry.IsActive = false
-	s.log.Info("deactivate the entry", "entry", entry)
+func (s *Scheduler) deactivate(task *Task) error {
+	task.IsActive = false
+	s.log.Info("deactivate the task", "task", task)
 	res, err := s.db.Exec(
 		s.query.UpdateIsActiveQuery,
-		false, entry.Id,
+		false, task.Id,
 	)
 	if err != nil {
 		return err
@@ -344,13 +344,13 @@ func (s *Scheduler) deactivate(entry *Entry) error {
 		return err
 	}
 	if rowsAffected != 1 {
-		s.log.Info("the entry was deleted somewhen", "entry", entry)
+		s.log.Info("the task was deleted somewhen", "task", task)
 	}
 	return nil
 }
 
-func (s *Scheduler) Add(entry *Entry) error {
-	if entry.Cron == nil && entry.NextTs == nil {
+func (s *Scheduler) Add(task *Task) error {
+	if task.Cron == nil && task.NextTs == nil {
 		return fmt.Errorf("invalid cron and/or nextTs	")
 	}
 
@@ -360,16 +360,16 @@ func (s *Scheduler) Add(entry *Entry) error {
 	}
 	defer stmt.Close()
 
-	err = stmt.QueryRow(entry.Name, entry.Cron, entry.NextTs, entry.Message).Scan(&entry.Id)
+	err = stmt.QueryRow(task.Name, task.Cron, task.NextTs, task.Message).Scan(&task.Id)
 	if err != nil {
 		return err
 	}
-	s.log.Info("the entry is created", "entry", entry)
+	s.log.Info("the task is created", "task", task)
 	return nil
 }
 
 func (s *Scheduler) Delete(id int) error {
-	s.log.Info("delete the entry", "id", id)
+	s.log.Info("delete the task", "task", id)
 	res, err := s.db.Exec(
 		s.query.DeleteQuery,
 		id,
@@ -382,7 +382,7 @@ func (s *Scheduler) Delete(id int) error {
 		return err
 	}
 	if rowsAffected != 1 {
-		s.log.Info("the entry was already deleted", "entry", id)
+		s.log.Info("the task was already deleted", "task", id)
 	}
 	return nil
 }
