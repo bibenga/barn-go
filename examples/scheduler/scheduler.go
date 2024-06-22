@@ -52,7 +52,6 @@ func main() {
 	// time.Local = time.UTC
 
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds | log.Lshortfile | log.Lmsgprefix)
-	// log.SetFlags(log.Ltime | log.Lmicroseconds)
 	log.SetPrefix("")
 	slog.SetLogLoggerLevel(slog.LevelDebug)
 
@@ -61,36 +60,43 @@ func main() {
 	db := initDb(false)
 	defer db.Close()
 
-	scheduler := scheduler.NewScheduler(db, &scheduler.DummySchedulerListener{})
+	sched := scheduler.NewScheduler(db, &scheduler.SchedulerConfig{
+		Listener: &scheduler.DummySchedulerListener{},
+	})
 
-	err := scheduler.CreateTable()
+	err := sched.CreateTable()
 	if err != nil {
-		slog.Error("db error", "error", err)
 		panic(err)
 	}
 
-	err = scheduler.DeleteAll()
+	err = sched.DeleteAll()
 	if err != nil {
-		slog.Error("db error", "error", err)
 		panic(err)
 	}
+
 	cron1 := "*/5 * * * * *"
-	err = scheduler.Add("olala1", &cron1, nil, "{\"type\":\"olala1\"}")
+	message1 := "{\"type\":\"olala1\"}"
+	err = sched.Add(&scheduler.Entry{
+		Name:    "olala1",
+		Cron:    &cron1,
+		Message: &message1,
+	})
 	if err != nil {
-		slog.Error("db error", "error", err)
 		panic(err)
 	}
 
+	// cron2 := "*/5 * * * * *"
 	// nextTs2 := time.Now().UTC().Add(-20 * time.Second)
-	// // err = scheduler.Add("olala2", nil, &nextTs2)
-	// cron2 := "*/10 * * * * *"
-	// err = scheduler.Add("olala2", &cron2, &nextTs2, "{\"type\":\"olala2\"}")
+	// err = sched.Add(&scheduler.Entry{
+	// 	Name:   "olala2",
+	// 	Cron:   &cron2,
+	// 	NextTs: &nextTs2,
+	// })
 	// if err != nil {
-	// 	slog.Error("db error", "error", err)
 	// 	panic(err)
 	// }
 
-	scheduler.StartContext(ctx)
+	sched.StartContext(ctx)
 
 	osSignal := make(chan os.Signal, 1)
 	signal.Notify(osSignal, os.Interrupt)

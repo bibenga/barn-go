@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -42,28 +43,53 @@ type SchedulerListener interface {
 	Process(name string, moment time.Time, message *string) error
 }
 
+type SchedulerConfig struct {
+	Log        *slog.Logger
+	Query      *EntryQuery
+	ReloadCron string
+	Listener   SchedulerListener
+}
+
 type Scheduler struct {
 	log         *slog.Logger
 	listener    SchedulerListener
 	db          *sql.DB
-	query       EntryQuery
+	query       *EntryQuery
 	entries     EntryMap
 	reloadEntry Entry
 }
 
-func NewScheduler(db *sql.DB, listener SchedulerListener) *Scheduler {
-	reloadCron := "*/10 * * * * *"
+func NewScheduler(db *sql.DB, config *SchedulerConfig) *Scheduler {
+	if db == nil {
+		panic(errors.New("db is nil"))
+	}
+	if config == nil {
+		panic(errors.New("config is nil"))
+	}
+	if config.Log == nil {
+		config.Log = slog.Default()
+	}
+	if config.Query == nil {
+		query := NewDefaultEntryQuery()
+		config.Query = &query
+	}
+	if config.ReloadCron == "" {
+		config.ReloadCron = "*/5 * * * *"
+	}
+	if config.Listener == nil {
+		config.Listener = &DummySchedulerListener{}
+	}
 	scheduler := Scheduler{
-		log:      slog.Default(),
-		listener: listener,
+		log:      config.Log,
+		listener: config.Listener,
 		db:       db,
-		query:    NewDefaultEntryQuery(),
+		query:    config.Query,
 		entries:  make(EntryMap),
 		reloadEntry: Entry{
 			Id:       math.MinInt,
 			Name:     "<reload>",
 			IsActive: true,
-			Cron:     &reloadCron,
+			Cron:     &config.ReloadCron,
 		},
 	}
 	return &scheduler
@@ -202,6 +228,7 @@ func (s *Scheduler) IsChanged(oldEntry *Entry, newEntry *Entry) bool {
 }
 
 func (s *Scheduler) getNext() *Entry {
+	// yes, we should use heap, but I'm lazy
 	var next *Entry = &s.reloadEntry
 	for _, entry := range s.entries {
 		if entry.NextTs.Before(*next.NextTs) {
@@ -281,72 +308,6 @@ func (s *Scheduler) getEntries() (EntryMap, error) {
 	return entries, nil
 }
 
-func (s *Scheduler) Add(name string, cron *string, nextTs *time.Time, message string) error {
-	// fake 1
-	// cron := "*/5 * * * * *"
-	if cron == nil && nextTs == nil {
-		return fmt.Errorf("invalid cron and/or nextTs	")
-	}
-	if message == "" {
-		return fmt.Errorf("invalid message")
-	}
-	// if cron != nil && nextTs == nil {
-	// 	nextTs2, err := gronx.NextTick(*cron, true)
-	// 	if err != nil {
-	// 		return err
-	// 	}
-	// 	nextTs = &nextTs2
-	// }
-
-	s.log.Info("create the entry", "name", name, "cron", cron, "message", message)
-	stmt, err := s.db.Prepare(s.query.InsertQuery)
-	if err != nil {
-		return err
-	}
-	defer stmt.Close()
-
-	var id int
-	err = stmt.QueryRow(name, cron, nextTs, message).Scan(&id)
-	if err != nil {
-		return err
-	}
-	s.log.Info("the entry is created", "name", name, "id", id)
-	return nil
-}
-
-func (s *Scheduler) Delete(id int) error {
-	s.log.Info("delete the entry", "id", id)
-	res, err := s.db.Exec(
-		s.query.DeleteQuery,
-		id,
-	)
-	if err != nil {
-		return err
-	}
-	rowsAffected, err := res.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if rowsAffected != 1 {
-		s.log.Info("the entry was already deleted", "entry", id)
-	}
-	return nil
-}
-
-func (s *Scheduler) DeleteAll() error {
-	s.log.Info("delete all entries")
-	res, err := s.db.Exec(s.query.DeleteAllQuery)
-	if err != nil {
-		return err
-	}
-	rowsAffected, err := res.RowsAffected()
-	if err != nil {
-		return err
-	}
-	s.log.Info("all entries is deleted", "RowsAffected", rowsAffected)
-	return nil
-}
-
 func (s *Scheduler) update(entry *Entry) error {
 	s.log.Info("update the entry", "entry", entry)
 	res, err := s.db.Exec(
@@ -384,6 +345,58 @@ func (s *Scheduler) deactivate(entry *Entry) error {
 	if rowsAffected != 1 {
 		s.log.Info("the entry was deleted somewhen", "entry", entry)
 	}
+	return nil
+}
+
+func (s *Scheduler) Add(entry *Entry) error {
+	if entry.Cron == nil && entry.NextTs == nil {
+		return fmt.Errorf("invalid cron and/or nextTs	")
+	}
+
+	stmt, err := s.db.Prepare(s.query.InsertQuery)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	err = stmt.QueryRow(entry.Name, entry.Cron, entry.NextTs, entry.Message).Scan(&entry.Id)
+	if err != nil {
+		return err
+	}
+	s.log.Info("the entry is created", "entry", entry)
+	return nil
+}
+
+func (s *Scheduler) Delete(id int) error {
+	s.log.Info("delete the entry", "id", id)
+	res, err := s.db.Exec(
+		s.query.DeleteQuery,
+		id,
+	)
+	if err != nil {
+		return err
+	}
+	rowsAffected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rowsAffected != 1 {
+		s.log.Info("the entry was already deleted", "entry", id)
+	}
+	return nil
+}
+
+func (s *Scheduler) DeleteAll() error {
+	s.log.Info("delete all entries")
+	res, err := s.db.Exec(s.query.DeleteAllQuery)
+	if err != nil {
+		return err
+	}
+	rowsAffected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	s.log.Info("all entries is deleted", "RowsAffected", rowsAffected)
 	return nil
 }
 

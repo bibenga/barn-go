@@ -59,13 +59,13 @@ func main() {
 	db := initDb(false)
 	defer db.Close()
 
-	dbLock := lock.NewLock(db)
-	if err := dbLock.CreateTable(); err != nil {
+	l := lock.NewLock(db)
+	if err := l.CreateTable(); err != nil {
 		slog.Error("db error", "error", err)
 		panic(err)
 	}
 
-	leader := lock.NewLeaderElector(dbLock, &lock.DummyLeaderListener{})
+	leader := lock.NewLeaderElector(l, &lock.DummyLeaderListener{})
 	leader.StartContext(ctx)
 
 	osSignal := make(chan os.Signal, 1)
