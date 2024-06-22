@@ -2,6 +2,11 @@ package lock
 
 import "fmt"
 
+const DefaultTableName string = "barn_lock"
+const DefaultNameField string = "name"
+const DefaultLockedAtField string = "locked_at"
+const DefaultOwnerField string = "owner"
+
 type LockQueryConfig struct {
 	TableName     string
 	NameField     string
@@ -9,25 +14,30 @@ type LockQueryConfig struct {
 	OwnerField    string
 }
 
-var defaultLockQueryConfig = LockQueryConfig{
-	TableName:     "barn_lock",
-	NameField:     "name",
-	LockedAtField: "locked_at",
-	OwnerField:    "owner",
-}
-
 type LockQuery struct {
-	createTableQuery string
-	insertQuery      string
-	selectQuery      string
-	lockQuery        string
-	confirmQuery     string
-	unlockQuery      string
+	CreateTableQuery string
+	InsertQuery      string
+	SelectQuery      string
+	LockQuery        string
+	ConfirmQuery     string
+	UnlockQuery      string
 }
 
 func NewLockQuery(c LockQueryConfig) LockQuery {
+	if c.TableName == "" {
+		c.TableName = DefaultTableName
+	}
+	if c.NameField == "" {
+		c.NameField = DefaultNameField
+	}
+	if c.LockedAtField == "" {
+		c.LockedAtField = DefaultLockedAtField
+	}
+	if c.OwnerField == "" {
+		c.OwnerField = DefaultOwnerField
+	}
 	return LockQuery{
-		createTableQuery: fmt.Sprintf(
+		CreateTableQuery: fmt.Sprintf(
 			`CREATE TABLE IF NOT EXISTS %s  (
 				%s VARCHAR NOT NULL,
 				%s TIMESTAMP WITH TIME ZONE,
@@ -40,14 +50,14 @@ func NewLockQuery(c LockQueryConfig) LockQuery {
 			c.OwnerField,
 			c.NameField,
 		),
-		insertQuery: fmt.Sprintf(
+		InsertQuery: fmt.Sprintf(
 			`insert into %s(%s) 
 			values ($1) 
 			on conflict (%s) do nothing`,
 			c.TableName, c.NameField,
 			c.NameField,
 		),
-		selectQuery: fmt.Sprintf(
+		SelectQuery: fmt.Sprintf(
 			`select %s, %s 
 			from %s 
 			where %s = $1`,
@@ -55,7 +65,7 @@ func NewLockQuery(c LockQueryConfig) LockQuery {
 			c.TableName,
 			c.NameField,
 		),
-		lockQuery: fmt.Sprintf(
+		LockQuery: fmt.Sprintf(
 			`update %s 
 			set %s = $1, %s = $2 
 			where %s = $3 and (%s is null or %s < $4)`,
@@ -63,7 +73,7 @@ func NewLockQuery(c LockQueryConfig) LockQuery {
 			c.OwnerField, c.LockedAtField,
 			c.NameField, c.LockedAtField, c.LockedAtField,
 		),
-		confirmQuery: fmt.Sprintf(
+		ConfirmQuery: fmt.Sprintf(
 			`update %s 
 			set %s = $1, %s = $2 
 			where %s = $3 and %s = $4 and %s > $5`,
@@ -71,7 +81,7 @@ func NewLockQuery(c LockQueryConfig) LockQuery {
 			c.OwnerField, c.LockedAtField,
 			c.NameField, c.OwnerField, c.LockedAtField,
 		),
-		unlockQuery: fmt.Sprintf(
+		UnlockQuery: fmt.Sprintf(
 			`update %s 
 			set %s = null, %s = null
 			where %s = $1 and %s = $2 and %s > $3`,
@@ -83,29 +93,5 @@ func NewLockQuery(c LockQueryConfig) LockQuery {
 }
 
 func NewDefaultLockQuery() LockQuery {
-	return NewLockQuery(defaultLockQueryConfig)
-}
-
-func (q *LockQuery) GetCreateTableQuery() string {
-	return q.createTableQuery
-}
-
-func (q *LockQuery) GetInsertQuery() string {
-	return q.insertQuery
-}
-
-func (q *LockQuery) GetSelectQuery() string {
-	return q.selectQuery
-}
-
-func (q *LockQuery) GetLockQuery() string {
-	return q.lockQuery
-}
-
-func (q *LockQuery) GetConfirmQuery() string {
-	return q.confirmQuery
-}
-
-func (q *LockQuery) GetUnlockQuery() string {
-	return q.unlockQuery
+	return NewLockQuery(LockQueryConfig{})
 }

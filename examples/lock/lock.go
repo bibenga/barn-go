@@ -59,7 +59,7 @@ func main() {
 	db := initDb(false)
 	defer db.Close()
 
-	dbLock := lock.NewLock(db, "host1", "barn", 10*time.Second, lock.WithRandomName())
+	dbLock := lock.NewLock(db)
 	if err := dbLock.CreateTable(); err != nil {
 		slog.Error("db error", "error", err)
 		panic(err)

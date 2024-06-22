@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"time"
@@ -18,20 +19,27 @@ type LockState struct {
 	Owner    *string
 }
 
+type LockConfig struct {
+	Log      *slog.Logger
+	Name     string
+	Query    *LockQuery
+	LockName string
+	Ttl      time.Duration
+	Hearbeat time.Duration
+}
+
 // Lock is the mutex entry in the database.
 type Lock struct {
 	log      *slog.Logger
 	name     string
 	db       *sql.DB
-	query    LockQuery
+	query    *LockQuery
 	lockName string
-	hearbeat time.Duration
 	ttl      time.Duration
+	hearbeat time.Duration
 	locked   bool
 	lockedAt *time.Time
 }
-
-type lockOpt func(locker *Lock)
 
 // The default TTL is 60 sec
 const DefaultLockTtl = 60 * time.Second
@@ -39,54 +47,63 @@ const DefaultLockTtl = 60 * time.Second
 // The defaulth heartbeat interval is 20 sec
 const DefaultHeartbeat = DefaultLockTtl / 3
 
-// NewLock returns a new lock client.
-func NewLock(db *sql.DB, name string, lockName string, ttl time.Duration, opts ...lockOpt) *Lock {
+func NewLock(db *sql.DB) *Lock {
+	return NewLockWithConfig(db, &LockConfig{})
+}
+
+// NewLockWithConfig create new Lock with config, during initialization config is adjusted
+func NewLockWithConfig(db *sql.DB, config *LockConfig) *Lock {
+	if db == nil {
+		panic(errors.New("db is nil"))
+	}
+	if config == nil {
+		panic(errors.New("config is nil"))
+	}
+	if config.Log == nil {
+		config.Log = slog.Default().With("lock", config.LockName, "name", config.Name)
+	}
+	if config.Name == "" {
+		name, err := os.Hostname()
+		if err != nil {
+			config.Log.Warn("cannot retrieve hostname", "error", err)
+		}
+		if name == "" {
+			uuid, err := uuid.NewRandom()
+			if err != nil {
+				panic(err)
+			}
+			name = uuid.String()
+		} else {
+			name = fmt.Sprintf("%s-%d", name, os.Getpid())
+		}
+		config.Name = name
+	}
+	if config.Query == nil {
+		query := NewDefaultLockQuery()
+		config.Query = &query
+	}
+	if config.LockName == "" {
+		config.LockName = "barn"
+	}
+	if config.Ttl == 0 {
+		config.Ttl = 60 * time.Second
+	}
+	if config.Hearbeat == 0 {
+		config.Hearbeat = config.Ttl / 3
+	}
+
 	lock := &Lock{
-		log:      slog.Default().With("lock", lockName, "name", name),
-		name:     name,
+		log:      config.Log,
+		name:     config.Name,
 		db:       db,
-		query:    NewDefaultLockQuery(),
-		lockName: lockName,
-		hearbeat: ttl / 3,
-		ttl:      ttl,
+		query:    config.Query,
+		lockName: config.LockName,
+		ttl:      config.Ttl,
+		hearbeat: config.Hearbeat,
 		locked:   false,
 		lockedAt: nil,
 	}
-	for _, opt := range opts {
-		opt(lock)
-	}
 	return lock
-}
-
-func WithHostname(name string) lockOpt {
-	return func(l *Lock) {
-		name, err := os.Hostname()
-		if err != nil {
-			panic(err)
-		}
-		if name == "" {
-			panic(errors.New("cannot retrieve hostname"))
-		}
-		l.name = name
-	}
-}
-
-func WithRandomName() lockOpt {
-	return func(l *Lock) {
-		uuid, err := uuid.NewRandom()
-		if err != nil {
-			panic(err)
-		}
-		l.name = uuid.String()
-	}
-}
-
-func WithTtl(ttl time.Duration) lockOpt {
-	return func(l *Lock) { l.ttl = ttl }
-}
-
-func WithHearbeat(hearbeat time.Duration) lockOpt {
-	return func(l *Lock) { l.hearbeat = hearbeat }
 }
 
 func (l *Lock) Name() string {
@@ -115,7 +132,7 @@ func (l *Lock) LockedAt() *time.Time {
 
 func (l *Lock) CreateTable() error {
 	l.log.Info("create lock table")
-	_, err := l.db.Exec(l.query.GetCreateTableQuery())
+	_, err := l.db.Exec(l.query.CreateTableQuery)
 	return err
 }
 
@@ -124,7 +141,7 @@ func (l *Lock) Create() (bool, error) {
 	l.log.Info("create the lock")
 
 	res, err := l.db.Exec(
-		l.query.GetInsertQuery(),
+		l.query.InsertQuery,
 		l.lockName,
 	)
 	if err != nil {
@@ -153,7 +170,7 @@ func (l *Lock) TryLock() (bool, error) {
 	lockedAt := time.Now().UTC()
 	rottenTs := lockedAt.Add(-l.ttl)
 	res, err := l.db.Exec(
-		l.query.GetLockQuery(),
+		l.query.LockQuery,
 		l.name, lockedAt,
 		l.lockName, rottenTs,
 	)
@@ -217,7 +234,7 @@ func (l *Lock) Confirm() (bool, error) {
 	lockedAt := time.Now().UTC()
 	rottenTs := lockedAt.Add(-l.ttl)
 	res, err := l.db.Exec(
-		l.query.GetConfirmQuery(),
+		l.query.ConfirmQuery,
 		l.name, lockedAt,
 		l.lockName, l.name, rottenTs,
 	)
@@ -247,7 +264,7 @@ func (l *Lock) Unlock() (bool, error) {
 	}
 	rottenTs := time.Now().UTC().Add(-l.ttl)
 	res, err := l.db.Exec(
-		l.query.GetUnlockQuery(),
+		l.query.UnlockQuery,
 		l.lockName, l.name, rottenTs,
 	)
 	if err != nil {
@@ -272,7 +289,7 @@ func (l *Lock) Unlock() (bool, error) {
 
 // Read lock state from DB
 func (l *Lock) State() (*LockState, error) {
-	stmt, err := l.db.Prepare(l.query.GetSelectQuery())
+	stmt, err := l.db.Prepare(l.query.SelectQuery)
 	if err != nil {
 		l.log.Error("cannot prepare query", "error", err)
 		return nil, err

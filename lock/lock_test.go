@@ -71,7 +71,7 @@ func setup(t *testing.T) *sql.DB {
 	assert.NoError(db.Ping())
 
 	lockQuery := NewDefaultLockQuery()
-	_, err = db.Exec(lockQuery.GetCreateTableQuery())
+	_, err = db.Exec(lockQuery.CreateTableQuery)
 	assert.NoError(err)
 
 	t.Cleanup(func() {
@@ -93,7 +93,7 @@ func TestTryLock(t *testing.T) {
 	_, err = db.Exec(`insert into barn_lock (name) values ('unnecessary')`)
 	assert.NoError(err)
 
-	l := NewLock(db, "host1", "barn", 10*time.Second)
+	l := NewLockWithConfig(db, &LockConfig{Name: "host1"})
 	captured, err := l.TryLock()
 	assert.NoError(err)
 	assert.True(captured)
@@ -117,7 +117,7 @@ func TestLogState(t *testing.T) {
 
 	db := setup(t)
 
-	l := NewLock(db, "host1", "barn", 10*time.Second)
+	l := NewLockWithConfig(db, &LockConfig{Name: "host1"})
 	state, err := l.State()
 	assert.NoError(err)
 	assert.NotNil(state)

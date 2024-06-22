@@ -71,7 +71,7 @@ func NewScheduler(db *sql.DB, listener SchedulerListener) *Scheduler {
 
 func (s *Scheduler) CreateTable() error {
 	s.log.Info("create table")
-	_, err := s.db.Exec(s.query.GetCreateTableQuery())
+	_, err := s.db.Exec(s.query.CreateTableQuery)
 	return err
 }
 
@@ -238,7 +238,7 @@ func (s *Scheduler) processEntry(entry *Entry) error {
 }
 
 func (s *Scheduler) getEntries() (EntryMap, error) {
-	stmt, err := s.db.Prepare(s.query.GetSelectAllQuery())
+	stmt, err := s.db.Prepare(s.query.SelectQuery)
 	if err != nil {
 		return nil, err
 	}
@@ -299,7 +299,7 @@ func (s *Scheduler) Add(name string, cron *string, nextTs *time.Time, message st
 	// }
 
 	s.log.Info("create the entry", "name", name, "cron", cron, "message", message)
-	stmt, err := s.db.Prepare(s.query.GetInsertQuery())
+	stmt, err := s.db.Prepare(s.query.InsertQuery)
 	if err != nil {
 		return err
 	}
@@ -317,7 +317,7 @@ func (s *Scheduler) Add(name string, cron *string, nextTs *time.Time, message st
 func (s *Scheduler) Delete(id int) error {
 	s.log.Info("delete the entry", "id", id)
 	res, err := s.db.Exec(
-		s.query.GetDeleteQuery(),
+		s.query.DeleteQuery,
 		id,
 	)
 	if err != nil {
@@ -335,7 +335,7 @@ func (s *Scheduler) Delete(id int) error {
 
 func (s *Scheduler) DeleteAll() error {
 	s.log.Info("delete all entries")
-	res, err := s.db.Exec(s.query.GetDeleteAllQuery())
+	res, err := s.db.Exec(s.query.DeleteAllQuery)
 	if err != nil {
 		return err
 	}
@@ -350,7 +350,7 @@ func (s *Scheduler) DeleteAll() error {
 func (s *Scheduler) update(entry *Entry) error {
 	s.log.Info("update the entry", "entry", entry)
 	res, err := s.db.Exec(
-		s.query.GetUpdateQuery(),
+		s.query.UpdateQuery,
 		entry.IsActive, entry.NextTs, entry.LastTs, entry.Id,
 	)
 	if err != nil {
@@ -371,7 +371,7 @@ func (s *Scheduler) deactivate(entry *Entry) error {
 	entry.IsActive = false
 	s.log.Info("deactivate the entry", "entry", entry)
 	res, err := s.db.Exec(
-		s.query.GetUpdateIsActiveQuery(),
+		s.query.UpdateIsActiveQuery,
 		false, entry.Id,
 	)
 	if err != nil {
