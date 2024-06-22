@@ -65,7 +65,9 @@ func main() {
 		panic(err)
 	}
 
-	leader := lock.NewLeaderElector(l, &lock.DummyLeaderListener{})
+	leader := lock.NewLeaderElector(&lock.LeaderElectorConfig{
+		Lock: l,
+	})
 	leader.StartContext(ctx)
 
 	osSignal := make(chan os.Signal, 1)
@@ -75,5 +77,4 @@ func main() {
 
 	cancel()
 	time.Sleep(1 * time.Second)
-
 }
