@@ -126,9 +126,19 @@ func (s *SimpleScheduler) run(ctx context.Context) {
 			if err := s.initTasks(); err != nil {
 				panic(err)
 			}
-			if err := s.processTasks(); err != nil {
-				panic(err)
+
+			limit := 50
+			i := 0
+			for i < 10 {
+				if processed, err := s.processTasks(limit); err != nil {
+					panic(err)
+				} else {
+					if processed < limit {
+						break
+					}
+				}
 			}
+
 			if nextTs, err := gronx.NextTick(s.cron, false); err != nil {
 				panic(err)
 			} else {
@@ -191,24 +201,24 @@ func (s *SimpleScheduler) initTasks() error {
 	return nil
 }
 
-func (s *SimpleScheduler) processTasks() error {
+func (s *SimpleScheduler) processTasks(limit int) (int, error) {
 	s.log.Info("process")
 
 	tx, err := s.db.Begin()
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer tx.Rollback()
 
 	stmt, err := tx.Prepare(s.query.SelectForProcessQuery)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer stmt.Close()
 
-	rows, err := stmt.Query(10)
+	rows, err := stmt.Query(limit)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	processed := 0
 	for rows.Next() {
@@ -216,11 +226,11 @@ func (s *SimpleScheduler) processTasks() error {
 		var t Task = Task{}
 		err := rows.Scan(&t.Id, &t.Name, &t.IsActive, &t.Cron, &t.NextTs, &t.LastTs, &t.Message)
 		if err != nil {
-			return err
+			return 0, err
 		}
 		if t.IsActive {
 			if err := s.listener.Process(t.Name, *t.NextTs, t.Message); err != nil {
-				return err
+				return 0, err
 			}
 
 			if t.Cron == nil && t.NextTs == nil {
@@ -230,7 +240,7 @@ func (s *SimpleScheduler) processTasks() error {
 				s.deactivate(tx, t)
 			} else {
 				if nextTs, err := gronx.NextTick(*t.Cron, false); err != nil {
-					return err
+					return 0, err
 				} else {
 					t.NextTs = &nextTs
 					s.update(tx, &t)
@@ -243,9 +253,9 @@ func (s *SimpleScheduler) processTasks() error {
 	s.log.Info("processed", "count", processed)
 
 	if err = tx.Commit(); err != nil {
-		return err
+		return 0, err
 	}
-	return nil
+	return processed, nil
 }
 
 func (s *SimpleScheduler) update(tx *sql.Tx, task *Task) error {
