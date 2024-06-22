@@ -24,7 +24,6 @@ func main() {
 	if err := leaderLock.CreateTable(); err != nil {
 		panic(err)
 	}
-
 	leader := lock.NewLeaderElector(&lock.LeaderElectorConfig{
 		Lock: leaderLock,
 	})

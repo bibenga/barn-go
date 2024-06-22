@@ -55,6 +55,8 @@ func main() {
 			if shedCtxCancel != nil {
 				shedCtxCancel()
 				shedCtxCancel = nil
+				// TODO:
+				// sched.WaitStop()
 			}
 		},
 	})

@@ -125,6 +125,7 @@ func (s *Scheduler) Run(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			s.log.Info("terminate")
+			clear(s.entries)
 			return
 		case <-timer.C:
 			if e == &s.reloadEntry {
