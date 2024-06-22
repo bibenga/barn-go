@@ -66,9 +66,6 @@ func NewScheduler(db *sql.DB, config *SchedulerConfig) *Scheduler {
 	if config == nil {
 		panic(errors.New("config is nil"))
 	}
-	if config.Log == nil {
-		config.Log = slog.Default()
-	}
 	if config.Query == nil {
 		query := NewDefaultEntryQuery()
 		config.Query = &query
@@ -78,6 +75,9 @@ func NewScheduler(db *sql.DB, config *SchedulerConfig) *Scheduler {
 	}
 	if config.Listener == nil {
 		config.Listener = &DummySchedulerListener{}
+	}
+	if config.Log == nil {
+		config.Log = slog.Default()
 	}
 	scheduler := Scheduler{
 		log:      config.Log,

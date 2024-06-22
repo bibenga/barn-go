@@ -33,14 +33,14 @@ func NewLeaderElector(config *LeaderElectorConfig) *LeaderElector {
 	if config == nil {
 		panic(errors.New("config is nil"))
 	}
-	if config.Log == nil {
-		config.Log = slog.Default()
-	}
 	if config.Lock == nil {
 		panic(errors.New("lock is nil"))
 	}
 	if config.Listener == nil {
 		config.Listener = &DummyLeaderListener{}
+	}
+	if config.Log == nil {
+		config.Log = slog.Default()
 	}
 	leader := LeaderElector{
 		log:                config.Log,

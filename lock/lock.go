@@ -94,10 +94,6 @@ func NewLockWithConfig(db *sql.DB, config *LockConfig) *Lock {
 				slog.String("lock", config.LockName),
 				slog.String("name", config.Name),
 			),
-			"lock", slog.GroupValue(
-				slog.String("a", config.LockName),
-				slog.String("b", config.Name),
-			),
 		)
 	}
 
