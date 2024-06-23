@@ -38,7 +38,7 @@ type LockQuery struct {
 	UnlockQuery      string
 }
 
-func NewLockQuery(c LockQueryConfig) LockQuery {
+func NewLockQuery(c *LockQueryConfig) LockQuery {
 	c.init()
 	return LockQuery{
 		CreateTableQuery: fmt.Sprintf(
@@ -97,5 +97,5 @@ func NewLockQuery(c LockQueryConfig) LockQuery {
 }
 
 func NewDefaultLockQuery() LockQuery {
-	return NewLockQuery(LockQueryConfig{})
+	return NewLockQuery(&LockQueryConfig{})
 }
