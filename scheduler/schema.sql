@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS barn_task (
+CREATE TABLE IF NOT EXISTS barn_schedule (
     id SERIAL NOT NULL, 
     name VARCHAR NOT NULL, 
     is_active BOOLEAN DEFAULT TRUE NOT NULL, 

@@ -17,7 +17,7 @@ type SimpleSchedulerHandler func(tx *sql.Tx, name string, moment time.Time, mess
 
 type SimpleSchedulerConfig struct {
 	Log     *slog.Logger
-	Query   *SimpleTaskQuery
+	Query   *SimpleScheduleQuery
 	Cron    string
 	Handler SimpleSchedulerHandler
 }
@@ -26,7 +26,7 @@ type SimpleScheduler struct {
 	log     *slog.Logger
 	handler SimpleSchedulerHandler
 	db      *sql.DB
-	query   *SimpleTaskQuery
+	query   *SimpleScheduleQuery
 	running atomic.Bool
 	cancel  context.CancelFunc
 	stoped  sync.WaitGroup
@@ -42,7 +42,7 @@ func NewSimpleScheduler(db *sql.DB, config *SimpleSchedulerConfig) *SimpleSchedu
 		panic(errors.New("config is nil"))
 	}
 	if config.Query == nil {
-		config.Query = NewDefaultSimpleTaskQuery()
+		config.Query = NewDefaultSimpleScheduleQuery()
 	}
 	if config.Cron == "" {
 		config.Cron = "* * * * *"
@@ -172,15 +172,15 @@ func (s *SimpleScheduler) initTasks() error {
 	processed := 0
 	for rows.Next() {
 		processed += 1
-		var t Task = Task{}
+		var t Schedule = Schedule{}
 		err := rows.Scan(&t.Id, &t.Name, &t.IsActive, &t.Cron, &t.NextTs, &t.LastTs, &t.Message)
 		if err != nil {
 			return err
 		}
-		s.log.Info("process task", "task", t)
+		s.log.Info("process schedule", "schedule", t)
 		if t.IsActive {
 			if t.Cron == nil && t.NextTs == nil {
-				s.log.Warn("invalid task", "task", t)
+				s.log.Warn("invalid schedule", "schedule", t)
 				s.deactivate(tx, t)
 			} else if t.Cron != nil && t.NextTs == nil {
 				if nextTs, err := gronx.NextTick(*t.Cron, true); err != nil {
@@ -191,7 +191,7 @@ func (s *SimpleScheduler) initTasks() error {
 				}
 			}
 		} else {
-			s.log.Info("the task is inactive", "task", t)
+			s.log.Info("the schedule is inactive", "schedule", t)
 		}
 	}
 	s.log.Info("processed", "count", processed)
@@ -224,7 +224,7 @@ func (s *SimpleScheduler) processTasks(limit int) (int, error) {
 	processed := 0
 	for rows.Next() {
 		processed += 1
-		var t Task = Task{}
+		var t Schedule = Schedule{}
 		err := rows.Scan(&t.Id, &t.Name, &t.IsActive, &t.Cron, &t.NextTs, &t.LastTs, &t.Message)
 		if err != nil {
 			return 0, err
@@ -235,7 +235,7 @@ func (s *SimpleScheduler) processTasks(limit int) (int, error) {
 			}
 
 			if t.Cron == nil && t.NextTs == nil {
-				s.log.Warn("invalid task", "task", t)
+				s.log.Warn("invalid schedule", "schedule", t)
 				s.deactivate(tx, t)
 			} else if t.Cron == nil {
 				s.deactivate(tx, t)
@@ -248,7 +248,7 @@ func (s *SimpleScheduler) processTasks(limit int) (int, error) {
 				}
 			}
 		} else {
-			s.log.Info("the task is inactive", "task", t)
+			s.log.Info("the schedule is inactive", "schedule", t)
 		}
 	}
 	s.log.Info("processed", "count", processed)
@@ -259,11 +259,11 @@ func (s *SimpleScheduler) processTasks(limit int) (int, error) {
 	return processed, nil
 }
 
-func (s *SimpleScheduler) update(tx *sql.Tx, task *Task) error {
-	s.log.Info("update the task", "task", task)
+func (s *SimpleScheduler) update(tx *sql.Tx, schedule *Schedule) error {
+	s.log.Info("update the schedule", "schedule", schedule)
 	res, err := tx.Exec(
 		s.query.UpdateQuery,
-		task.IsActive, task.NextTs, task.LastTs, task.Id,
+		schedule.IsActive, schedule.NextTs, schedule.LastTs, schedule.Id,
 	)
 	if err != nil {
 		return err
@@ -278,12 +278,12 @@ func (s *SimpleScheduler) update(tx *sql.Tx, task *Task) error {
 	return nil
 }
 
-func (s *SimpleScheduler) deactivate(tx *sql.Tx, task Task) error {
-	task.IsActive = false
-	s.log.Info("deactivate the task", "task", task)
+func (s *SimpleScheduler) deactivate(tx *sql.Tx, schedule Schedule) error {
+	schedule.IsActive = false
+	s.log.Info("deactivate the schedule", "schedule", schedule)
 	res, err := tx.Exec(
 		s.query.UpdateIsActiveQuery,
-		false, task.Id,
+		false, schedule.Id,
 	)
 	if err != nil {
 		return err

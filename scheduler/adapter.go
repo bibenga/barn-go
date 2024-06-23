@@ -2,7 +2,7 @@ package scheduler
 
 import "fmt"
 
-const DefaultTableName = "barn_task"
+const DefaultTableName = "barn_schedule"
 const DefaultIdField = "id"
 const DefaultNameField = "name"
 const DefaultIsActiveField = "is_active"
@@ -11,7 +11,7 @@ const DefaultNextTsField = "next_ts"
 const DefaultLastTsField = "last_ts"
 const DefaultMessageField = "message"
 
-type TaskQueryConfig struct {
+type ScheduleQueryConfig struct {
 	TableName     string
 	IdField       string
 	NameField     string
@@ -22,7 +22,7 @@ type TaskQueryConfig struct {
 	MessageField  string
 }
 
-func (c *TaskQueryConfig) init() {
+func (c *ScheduleQueryConfig) init() {
 	if c.TableName == "" {
 		c.TableName = DefaultTableName
 	}
@@ -49,7 +49,7 @@ func (c *TaskQueryConfig) init() {
 	}
 }
 
-type TaskQuery struct {
+type ScheduleQuery struct {
 	CreateTableQuery    string
 	SelectQuery         string
 	InsertQuery         string
@@ -59,9 +59,9 @@ type TaskQuery struct {
 	UpdateIsActiveQuery string
 }
 
-func NewTaskQuery(c *TaskQueryConfig) *TaskQuery {
+func NewScheduleQuery(c *ScheduleQueryConfig) *ScheduleQuery {
 	c.init()
-	return &TaskQuery{
+	return &ScheduleQuery{
 		CreateTableQuery: fmt.Sprintf(
 			`CREATE TABLE IF NOT EXISTS %s (
 				%s SERIAL NOT NULL, 
@@ -128,11 +128,11 @@ func NewTaskQuery(c *TaskQueryConfig) *TaskQuery {
 	}
 }
 
-func NewDefaultTaskQuery() *TaskQuery {
-	return NewTaskQuery(&TaskQueryConfig{})
+func NewDefaultScheduleQuery() *ScheduleQuery {
+	return NewScheduleQuery(&ScheduleQueryConfig{})
 }
 
-type SimpleTaskQuery struct {
+type SimpleScheduleQuery struct {
 	CreateTableQuery      string
 	SelectForInitQuery    string
 	SelectForProcessQuery string
@@ -140,9 +140,9 @@ type SimpleTaskQuery struct {
 	UpdateIsActiveQuery   string
 }
 
-func NewSimpleTaskQuery(c *TaskQueryConfig) *SimpleTaskQuery {
-	q := NewTaskQuery(c)
-	return &SimpleTaskQuery{
+func NewSimpleScheduleQuery(c *ScheduleQueryConfig) *SimpleScheduleQuery {
+	q := NewScheduleQuery(c)
+	return &SimpleScheduleQuery{
 		CreateTableQuery: q.CreateTableQuery,
 		SelectForInitQuery: fmt.Sprintf(
 			`select %s, %s, %s, %s, %s, %s, %s 
@@ -168,6 +168,6 @@ func NewSimpleTaskQuery(c *TaskQueryConfig) *SimpleTaskQuery {
 	}
 }
 
-func NewDefaultSimpleTaskQuery() *SimpleTaskQuery {
-	return NewSimpleTaskQuery(&TaskQueryConfig{})
+func NewDefaultSimpleScheduleQuery() *SimpleScheduleQuery {
+	return NewSimpleScheduleQuery(&ScheduleQueryConfig{})
 }
