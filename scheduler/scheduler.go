@@ -307,7 +307,7 @@ func (s *Scheduler) getSchedules() (ScheduleMap, error) {
 	}
 	defer stmt.Close()
 
-	entries := make(ScheduleMap)
+	schedules := make(ScheduleMap)
 
 	rows, err := stmt.Query()
 	if err != nil {
@@ -335,13 +335,13 @@ func (s *Scheduler) getSchedules() (ScheduleMap, error) {
 					s.update(&schedule)
 				}
 				s.log.Info("the schedule is active", "schedule", schedule)
-				entries[schedule.Id] = &schedule
+				schedules[schedule.Id] = &schedule
 			}
 		} else {
 			s.log.Info("the schedule is inactive", "schedule", schedule)
 		}
 	}
-	return entries, nil
+	return schedules, nil
 }
 
 func (s *Scheduler) update(schedule *Schedule) error {
@@ -424,7 +424,7 @@ func (s *Scheduler) Delete(id int) error {
 }
 
 func (s *Scheduler) DeleteAll() error {
-	s.log.Info("delete all entries")
+	s.log.Info("delete all schedules")
 	res, err := s.db.Exec(s.query.DeleteAllQuery)
 	if err != nil {
 		return err
@@ -433,7 +433,7 @@ func (s *Scheduler) DeleteAll() error {
 	if err != nil {
 		return err
 	}
-	s.log.Info("all entries is deleted", "RowsAffected", rowsAffected)
+	s.log.Info("all schedules is deleted", "RowsAffected", rowsAffected)
 	return nil
 }
 
