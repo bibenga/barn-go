@@ -65,19 +65,18 @@ func NewLockWithConfig(db *sql.DB, config *LockConfig) *Lock {
 			config.Log.Warn("cannot retrieve hostname", "error", err)
 		}
 		if name == "" {
-			uuid, err := uuid.NewRandom()
-			if err != nil {
+			if uuid, err := uuid.NewRandom(); err != nil {
 				panic(err)
+			} else {
+				name = uuid.String()
 			}
-			name = uuid.String()
 		} else {
 			name = fmt.Sprintf("%s-%d", name, os.Getpid())
 		}
 		config.Name = name
 	}
 	if config.Query == nil {
-		query := NewDefaultLockQuery()
-		config.Query = &query
+		config.Query = NewDefaultLockQuery()
 	}
 	if config.LockName == "" {
 		config.LockName = "barn"

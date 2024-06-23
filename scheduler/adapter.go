@@ -59,9 +59,9 @@ type TaskQuery struct {
 	UpdateIsActiveQuery string
 }
 
-func NewTaskQuery(c *TaskQueryConfig) TaskQuery {
+func NewTaskQuery(c *TaskQueryConfig) *TaskQuery {
 	c.init()
-	return TaskQuery{
+	return &TaskQuery{
 		CreateTableQuery: fmt.Sprintf(
 			`CREATE TABLE IF NOT EXISTS %s (
 				%s SERIAL NOT NULL, 
@@ -128,7 +128,7 @@ func NewTaskQuery(c *TaskQueryConfig) TaskQuery {
 	}
 }
 
-func NewDefaultTaskQuery() TaskQuery {
+func NewDefaultTaskQuery() *TaskQuery {
 	return NewTaskQuery(&TaskQueryConfig{})
 }
 
@@ -140,9 +140,9 @@ type SimpleTaskQuery struct {
 	UpdateIsActiveQuery   string
 }
 
-func NewSimpleTaskQuery(c *TaskQueryConfig) SimpleTaskQuery {
+func NewSimpleTaskQuery(c *TaskQueryConfig) *SimpleTaskQuery {
 	q := NewTaskQuery(c)
-	return SimpleTaskQuery{
+	return &SimpleTaskQuery{
 		CreateTableQuery: q.CreateTableQuery,
 		SelectForInitQuery: fmt.Sprintf(
 			`select %s, %s, %s, %s, %s, %s, %s 
@@ -168,6 +168,6 @@ func NewSimpleTaskQuery(c *TaskQueryConfig) SimpleTaskQuery {
 	}
 }
 
-func NewDefaultSimpleTaskQuery() SimpleTaskQuery {
+func NewDefaultSimpleTaskQuery() *SimpleTaskQuery {
 	return NewSimpleTaskQuery(&TaskQueryConfig{})
 }

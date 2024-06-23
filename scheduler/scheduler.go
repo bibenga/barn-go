@@ -71,8 +71,7 @@ func NewScheduler(db *sql.DB, config *SchedulerConfig) *Scheduler {
 		panic(errors.New("config is nil"))
 	}
 	if config.Query == nil {
-		query := NewDefaultTaskQuery()
-		config.Query = &query
+		config.Query = NewDefaultTaskQuery()
 	}
 	if config.ReloadCron == "" {
 		config.ReloadCron = "*/5 * * * *"

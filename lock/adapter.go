@@ -38,9 +38,9 @@ type LockQuery struct {
 	UnlockQuery      string
 }
 
-func NewLockQuery(c *LockQueryConfig) LockQuery {
+func NewLockQuery(c *LockQueryConfig) *LockQuery {
 	c.init()
-	return LockQuery{
+	return &LockQuery{
 		CreateTableQuery: fmt.Sprintf(
 			`CREATE TABLE IF NOT EXISTS %s  (
 				%s VARCHAR NOT NULL,
@@ -96,6 +96,6 @@ func NewLockQuery(c *LockQueryConfig) LockQuery {
 	}
 }
 
-func NewDefaultLockQuery() LockQuery {
+func NewDefaultLockQuery() *LockQuery {
 	return NewLockQuery(&LockQueryConfig{})
 }

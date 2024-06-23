@@ -42,8 +42,7 @@ func NewSimpleScheduler(db *sql.DB, config *SimpleSchedulerConfig) *SimpleSchedu
 		panic(errors.New("config is nil"))
 	}
 	if config.Query == nil {
-		query := NewDefaultSimpleTaskQuery()
-		config.Query = &query
+		config.Query = NewDefaultSimpleTaskQuery()
 	}
 	if config.Cron == "" {
 		config.Cron = "* * * * *"
