@@ -42,11 +42,11 @@ func NewLockQuery(c *LockQueryConfig) *LockQuery {
 	c.init()
 	return &LockQuery{
 		CreateTableQuery: fmt.Sprintf(
-			`CREATE TABLE IF NOT EXISTS %s  (
-				%s VARCHAR NOT NULL,
-				%s TIMESTAMP WITH TIME ZONE,
-				%s VARCHAR,
-				PRIMARY KEY (%s)
+			`create table if not exists %s  (
+				%s varchar not null,
+				%s timestamp with time zone,
+				%s varchar,
+				primary key (%s)
 			)`,
 			c.TableName,
 			c.NameField,

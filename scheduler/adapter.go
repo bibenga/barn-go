@@ -63,16 +63,16 @@ func NewScheduleQuery(c *ScheduleQueryConfig) *ScheduleQuery {
 	c.init()
 	return &ScheduleQuery{
 		CreateTableQuery: fmt.Sprintf(
-			`CREATE TABLE IF NOT EXISTS %s (
-				%s SERIAL NOT NULL, 
-				%s VARCHAR NOT NULL, 
-				%s BOOLEAN DEFAULT TRUE NOT NULL, 
-				%s VARCHAR, 
-				%s TIMESTAMP WITH TIME ZONE, 
-				%s TIMESTAMP WITH TIME ZONE, 
-				%s JSONB, 
-				PRIMARY KEY (%s),
-				UNIQUE (%s)
+			`create table if not exists %s (
+				%s serial not null, 
+				%s varchar not null, 
+				%s boolean default true not null, 
+				%s varchar, 
+				%s timestamp with time zone, 
+				%s timestamp with time zone, 
+				%s jsonb, 
+				primary key (%s),
+				unique (%s)
 			)`,
 			c.TableName,
 			c.IdField,
