@@ -11,8 +11,8 @@ import (
 	pgxslog "github.com/mcosta74/pgx-slog"
 )
 
-const DriverName string = "pgx"
-const ConnectionString string = "host=host.docker.internal port=5432 user=rds password=sqlsql dbname=barn TimeZone=UTC sslmode=disable"
+const DriverName = "pgx"
+const ConnectionString = "host=host.docker.internal port=5432 user=rds password=sqlsql dbname=barn TimeZone=UTC sslmode=disable"
 
 func Setup(trace bool) {
 	// time.Local = time.UTC

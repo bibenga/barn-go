@@ -2,14 +2,14 @@ package scheduler
 
 import "fmt"
 
-const DefaultTableName string = "barn_task"
-const DefaultIdField string = "id"
-const DefaultNameField string = "name"
-const DefaultIsActiveField string = "is_active"
-const DefaultCronField string = "cron"
-const DefaultNextTsField string = "next_ts"
-const DefaultLastTsField string = "last_ts"
-const DefaultMessageField string = "message"
+const DefaultTableName = "barn_task"
+const DefaultIdField = "id"
+const DefaultNameField = "name"
+const DefaultIsActiveField = "is_active"
+const DefaultCronField = "cron"
+const DefaultNextTsField = "next_ts"
+const DefaultLastTsField = "last_ts"
+const DefaultMessageField = "message"
 
 type TaskQueryConfig struct {
 	TableName     string

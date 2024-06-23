@@ -2,10 +2,10 @@ package lock
 
 import "fmt"
 
-const DefaultTableName string = "barn_lock"
-const DefaultNameField string = "name"
-const DefaultLockedAtField string = "locked_at"
-const DefaultOwnerField string = "owner"
+const DefaultTableName = "barn_lock"
+const DefaultNameField = "name"
+const DefaultLockedAtField = "locked_at"
+const DefaultOwnerField = "owner"
 
 type LockQueryConfig struct {
 	TableName     string
