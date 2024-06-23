@@ -16,9 +16,7 @@ func main() {
 	db := examples.InitDb(false)
 	defer db.Close()
 
-	sched := scheduler.NewScheduler(db, &scheduler.SchedulerConfig{
-		Listener: &scheduler.DummySchedulerListener{},
-	})
+	sched := scheduler.NewScheduler(db, &scheduler.SchedulerConfig{})
 	if err := sched.CreateTable(); err != nil {
 		panic(err)
 	}

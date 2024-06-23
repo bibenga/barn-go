@@ -13,23 +13,25 @@ import (
 	"github.com/adhocore/gronx"
 )
 
+type SimpleSchedulerHandler func(tx *sql.Tx, name string, moment time.Time, message *string) error
+
 type SimpleSchedulerConfig struct {
-	Log      *slog.Logger
-	Query    *SimpleTaskQuery
-	Cron     string
-	Listener SchedulerListener
+	Log     *slog.Logger
+	Query   *SimpleTaskQuery
+	Cron    string
+	Handler SimpleSchedulerHandler
 }
 
 type SimpleScheduler struct {
-	log      *slog.Logger
-	listener SchedulerListener
-	db       *sql.DB
-	query    *SimpleTaskQuery
-	running  atomic.Bool
-	cancel   context.CancelFunc
-	stoped   sync.WaitGroup
-	cron     string
-	nextTs   time.Time
+	log     *slog.Logger
+	handler SimpleSchedulerHandler
+	db      *sql.DB
+	query   *SimpleTaskQuery
+	running atomic.Bool
+	cancel  context.CancelFunc
+	stoped  sync.WaitGroup
+	cron    string
+	nextTs  time.Time
 }
 
 func NewSimpleScheduler(db *sql.DB, config *SimpleSchedulerConfig) *SimpleScheduler {
@@ -46,18 +48,18 @@ func NewSimpleScheduler(db *sql.DB, config *SimpleSchedulerConfig) *SimpleSchedu
 	if config.Cron == "" {
 		config.Cron = "* * * * *"
 	}
-	if config.Listener == nil {
-		config.Listener = &DummySchedulerListener{}
+	if config.Handler == nil {
+		config.Handler = dummySimpleSchedulerHandler
 	}
 	if config.Log == nil {
 		config.Log = slog.Default()
 	}
 	scheduler := SimpleScheduler{
-		log:      config.Log,
-		listener: config.Listener,
-		db:       db,
-		query:    config.Query,
-		cron:     config.Cron,
+		log:     config.Log,
+		handler: config.Handler,
+		db:      db,
+		query:   config.Query,
+		cron:    config.Cron,
 	}
 	return &scheduler
 }
@@ -229,7 +231,7 @@ func (s *SimpleScheduler) processTasks(limit int) (int, error) {
 			return 0, err
 		}
 		if t.IsActive {
-			if err := s.listener.Process(t.Name, *t.NextTs, t.Message); err != nil {
+			if err := s.handler(tx, t.Name, *t.NextTs, t.Message); err != nil {
 				return 0, err
 			}
 
@@ -295,4 +297,8 @@ func (s *SimpleScheduler) deactivate(tx *sql.Tx, task Task) error {
 		return fmt.Errorf("we inside select for update, what's happened?")
 	}
 	return nil
+}
+
+func dummySimpleSchedulerHandler(tx *sql.Tx, name string, moment time.Time, message *string) error {
+	return dummySchedulerHandler(nil, name, moment, message)
 }

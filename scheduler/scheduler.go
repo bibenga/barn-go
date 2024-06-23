@@ -42,20 +42,18 @@ func (e Task) LogValue() slog.Value {
 type TaskMap map[int]*Task
 type TaskList []*Task
 
-type SchedulerListener interface {
-	Process(name string, moment time.Time, message *string) error
-}
+type SchedulerHandler func(db *sql.DB, name string, moment time.Time, message *string) error
 
 type SchedulerConfig struct {
 	Log        *slog.Logger
 	Query      *TaskQuery
 	ReloadCron string
-	Listener   SchedulerListener
+	Handler    SchedulerHandler
 }
 
 type Scheduler struct {
 	log        *slog.Logger
-	listener   SchedulerListener
+	handler    SchedulerHandler
 	db         *sql.DB
 	query      *TaskQuery
 	tasks      TaskMap
@@ -79,18 +77,18 @@ func NewScheduler(db *sql.DB, config *SchedulerConfig) *Scheduler {
 	if config.ReloadCron == "" {
 		config.ReloadCron = "*/5 * * * *"
 	}
-	if config.Listener == nil {
-		config.Listener = &DummySchedulerListener{}
+	if config.Handler == nil {
+		config.Handler = dummySchedulerHandler
 	}
 	if config.Log == nil {
 		config.Log = slog.Default()
 	}
 	scheduler := Scheduler{
-		log:      config.Log,
-		listener: config.Listener,
-		db:       db,
-		query:    config.Query,
-		tasks:    make(TaskMap),
+		log:     config.Log,
+		handler: config.Handler,
+		db:      db,
+		query:   config.Query,
+		tasks:   make(TaskMap),
 		reloadTask: Task{
 			Id:       math.MinInt,
 			Name:     "<reload>",
@@ -277,7 +275,11 @@ func (s *Scheduler) processTask(task *Task) error {
 	if task != nil {
 		// process
 		s.log.Info("tik ", "task", task.Id, "nextTs", task.NextTs)
-		s.listener.Process(task.Name, *task.NextTs, task.Message)
+
+		if err := s.handler(s.db, task.Name, *task.NextTs, task.Message); err != nil {
+			return err
+		}
+
 		// calculate next time
 		if task.Cron != nil {
 			nextTs, err := gronx.NextTick(*task.Cron, false)
@@ -435,10 +437,7 @@ func (s *Scheduler) DeleteAll() error {
 	return nil
 }
 
-type DummySchedulerListener struct {
-}
-
-func (l *DummySchedulerListener) Process(name string, moment time.Time, message *string) error {
+func dummySchedulerHandler(db *sql.DB, name string, moment time.Time, message *string) error {
 	var payload map[string]interface{}
 	if message != nil {
 		if err := json.Unmarshal([]byte(*message), &payload); err != nil {
@@ -458,5 +457,3 @@ func (l *DummySchedulerListener) Process(name string, moment time.Time, message 
 	}
 	return nil
 }
-
-var _ SchedulerListener = &DummySchedulerListener{}

@@ -17,8 +17,7 @@ func main() {
 	defer db.Close()
 
 	sched := scheduler.NewSimpleScheduler(db, &scheduler.SimpleSchedulerConfig{
-		Cron:     "*/5 * * * * *",
-		Listener: &scheduler.DummySchedulerListener{},
+		Cron: "*/5 * * * * *",
 	})
 	if err := sched.CreateTable(); err != nil {
 		panic(err)

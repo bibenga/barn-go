@@ -18,9 +18,7 @@ func main() {
 	db := examples.InitDb(false)
 	defer db.Close()
 
-	sched := scheduler.NewScheduler(db, &scheduler.SchedulerConfig{
-		Listener: &scheduler.DummySchedulerListener{},
-	})
+	sched := scheduler.NewScheduler(db, &scheduler.SchedulerConfig{})
 	if err := sched.CreateTable(); err != nil {
 		panic(err)
 	}
@@ -45,11 +43,13 @@ func main() {
 	}
 	leader := lock.NewLeaderElector(&lock.LeaderElectorConfig{
 		Lock: leaderLock,
-		OnElectedHandler: func() {
-			sched.StartContext(ctx)
-		},
-		OnUnelectedHandler: func() {
-			sched.Stop()
+		Handler: func(leader bool) error {
+			if leader {
+				sched.StartContext(ctx)
+			} else {
+				sched.Stop()
+			}
+			return nil
 		},
 	})
 

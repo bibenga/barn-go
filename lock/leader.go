@@ -9,29 +9,21 @@ import (
 	"time"
 )
 
-type LeaderHandler func()
-type LeaderListener interface {
-	OnElected()
-	OnUnelected()
-}
+type LeaderElectionHandler func(leader bool) error
 
 type LeaderElectorConfig struct {
-	Log                *slog.Logger
-	Lock               *Lock
-	Listener           LeaderListener
-	OnElectedHandler   LeaderHandler
-	OnUnelectedHandler LeaderHandler
+	Log     *slog.Logger
+	Lock    *Lock
+	Handler LeaderElectionHandler
 }
 
 type LeaderElector struct {
-	log                *slog.Logger
-	lock               *Lock
-	listener           LeaderListener
-	onElectedHandler   LeaderHandler
-	onUnelectedHandler LeaderHandler
-	running            atomic.Bool
-	cancel             context.CancelFunc
-	stoped             sync.WaitGroup
+	log     *slog.Logger
+	lock    *Lock
+	handler LeaderElectionHandler
+	running atomic.Bool
+	cancel  context.CancelFunc
+	stoped  sync.WaitGroup
 }
 
 func NewLeaderElector(config *LeaderElectorConfig) *LeaderElector {
@@ -41,18 +33,16 @@ func NewLeaderElector(config *LeaderElectorConfig) *LeaderElector {
 	if config.Lock == nil {
 		panic(errors.New("lock is nil"))
 	}
-	if config.Listener == nil {
-		config.Listener = &DummyLeaderListener{}
+	if config.Handler == nil {
+		config.Handler = dummyLeaderHandler
 	}
 	if config.Log == nil {
 		config.Log = slog.Default()
 	}
 	leader := LeaderElector{
-		log:                config.Log,
-		lock:               config.Lock,
-		listener:           config.Listener,
-		onElectedHandler:   config.OnElectedHandler,
-		onUnelectedHandler: config.OnUnelectedHandler,
+		log:     config.Log,
+		lock:    config.Lock,
+		handler: config.Handler,
 	}
 	return &leader
 }
@@ -124,13 +114,13 @@ func (l *LeaderElector) open() error {
 		panic(err)
 	}
 	if l.lock.IsLocked() {
-		l.onElected()
+		return l.onElected()
 	} else {
 		if locked, err := l.lock.TryLock(); err != nil {
 			return err
 		} else {
 			if locked {
-				l.onElected()
+				return l.onElected()
 			}
 		}
 	}
@@ -143,7 +133,7 @@ func (l *LeaderElector) hearbeat() error {
 			return err
 		} else {
 			if !confirmed {
-				l.onUnelected()
+				return l.onUnelected()
 			}
 		}
 	} else {
@@ -152,7 +142,7 @@ func (l *LeaderElector) hearbeat() error {
 		} else {
 			if acquired {
 				l.log.Info("the lock was rotten and it is acquired")
-				l.onElected()
+				return l.onElected()
 			} else {
 				if state, err := l.lock.State(); err != nil {
 					return err
@@ -171,39 +161,26 @@ func (l *LeaderElector) close() error {
 			return err
 		} else {
 			if unlocked {
-				l.onUnelected()
+				return l.onUnelected()
 			}
 		}
 	}
 	return nil
 }
 
-func (l *LeaderElector) onElected() {
-	if l.listener != nil {
-		l.listener.OnElected()
-	}
-	if l.onElectedHandler != nil {
-		l.onElectedHandler()
-	}
+func (l *LeaderElector) onElected() error {
+	return l.handler(true)
 }
 
-func (l *LeaderElector) onUnelected() {
-	if l.listener != nil {
-		l.listener.OnUnelected()
+func (l *LeaderElector) onUnelected() error {
+	return l.handler(false)
+}
+
+func dummyLeaderHandler(leader bool) error {
+	if leader {
+		slog.Info("DUMMY: I am a leader")
+	} else {
+		slog.Info("DUMMY: I am not a leader")
 	}
-	if l.onUnelectedHandler != nil {
-		l.onUnelectedHandler()
-	}
+	return nil
 }
-
-type DummyLeaderListener struct{}
-
-func (l *DummyLeaderListener) OnElected() {
-	slog.Info("DUMMY: I am a leader")
-}
-
-func (l *DummyLeaderListener) OnUnelected() {
-	slog.Info("DUMMY: I am not a leader")
-}
-
-var _ LeaderListener = &DummyLeaderListener{}
