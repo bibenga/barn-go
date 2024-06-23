@@ -348,7 +348,8 @@ func (s *Scheduler) update(schedule *Schedule) error {
 	s.log.Info("update the schedule", "schedule", schedule)
 	res, err := s.db.Exec(
 		s.query.UpdateQuery,
-		schedule.IsActive, schedule.NextTs, schedule.LastTs, schedule.Id,
+		schedule.IsActive, schedule.NextTs, schedule.LastTs,
+		schedule.Id,
 	)
 	if err != nil {
 		return err
