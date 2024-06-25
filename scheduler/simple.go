@@ -122,16 +122,8 @@ func (s *SimpleScheduler) run(ctx context.Context) {
 			s.log.Info("terminate")
 			return
 		case <-timer.C:
-			limit := 10
-			i := 0
-			for i < 100 {
-				if processed, err := s.processTasks(limit); err != nil {
-					panic(err)
-				} else {
-					if processed < limit {
-						break
-					}
-				}
+			if err := s.processTasks(); err != nil {
+				panic(err)
 			}
 
 			if nextTs, err := gronx.NextTick(s.cron, false); err != nil {
@@ -143,18 +135,16 @@ func (s *SimpleScheduler) run(ctx context.Context) {
 	}
 }
 
-func (s *SimpleScheduler) processTasks(limit int) (int, error) {
+func (s *SimpleScheduler) processTasks() error {
 	s.log.Info("process")
 
-	processed := 0
 	err := barngo.RunInTransaction(s.db, func(tx *sql.Tx) error {
-		schedules, err := s.repository.FindActiveAndExpired(tx, nil, limit)
+		schedules, err := s.repository.FindActiveAndExpired(tx, nil, 10000)
 		if err != nil {
 			return err
 		}
 		s.log.Debug("the schedules is loaded", "count", len(schedules))
 		for _, dbSchedule := range schedules {
-			processed += 1
 			s.log.Info("process the schedule", "schedule", dbSchedule)
 			if dbSchedule.NextTs == nil && dbSchedule.Cron == nil {
 				s.log.Debug("the schedule is not valid")
@@ -188,5 +178,5 @@ func (s *SimpleScheduler) processTasks(limit int) (int, error) {
 		}
 		return nil
 	})
-	return processed, err
+	return err
 }
