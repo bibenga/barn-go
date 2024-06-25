@@ -214,17 +214,6 @@ func (r *PostgresSchedulerRepository) Save(tx *sql.Tx, s *Schedule) error {
 	return nil
 }
 
-func (r *PostgresSchedulerRepository) DeleteAll(tx *sql.Tx) error {
-	c := r.Config
-	_, err := tx.Exec(
-		fmt.Sprintf(
-			`delete from %s`,
-			c.TableName,
-		),
-	)
-	return err
-}
-
 func (r *PostgresSchedulerRepository) Delete(tx *sql.Tx, pk int) error {
 	c := r.Config
 	res, err := tx.Exec(
@@ -247,6 +236,17 @@ func (r *PostgresSchedulerRepository) Delete(tx *sql.Tx, pk int) error {
 		}
 	}
 	return nil
+}
+
+func (r *PostgresSchedulerRepository) DeleteAll(tx *sql.Tx) error {
+	c := r.Config
+	_, err := tx.Exec(
+		fmt.Sprintf(
+			`delete from %s`,
+			c.TableName,
+		),
+	)
+	return err
 }
 
 var _ SchedulerRepository = &PostgresSchedulerRepository{}

@@ -111,4 +111,15 @@ func (r *PostgresLockRepository) Save(tx *sql.Tx, lock *Lock) error {
 	return nil
 }
 
+func (r *PostgresLockRepository) DeleteAll(tx *sql.Tx) error {
+	c := r.Config
+	_, err := tx.Exec(
+		fmt.Sprintf(
+			`delete from %s`,
+			c.TableName,
+		),
+	)
+	return err
+}
+
 var _ LockRepository = &PostgresLockRepository{}
