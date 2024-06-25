@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"log/slog"
 	"os"
 	"os/signal"
 
+	barngo "github.com/bibenga/barn-go"
 	"github.com/bibenga/barn-go/examples"
 	"github.com/bibenga/barn-go/scheduler"
 )
@@ -16,28 +18,38 @@ func main() {
 	db := examples.InitDb(false)
 	defer db.Close()
 
-	sched := scheduler.NewScheduler(db, &scheduler.SchedulerConfig{})
-	if err := sched.CreateTable(); err != nil {
-		panic(err)
-	}
-	if err := sched.DeleteAll(); err != nil {
-		panic(err)
-	}
+	repository := scheduler.NewDefaultPostgresSchedulerRepository()
 
-	cron1 := "*/5 * * * * *"
-	message1 := "{\"type\":\"olala1\"}"
-	if err := sched.Add(&scheduler.Schedule{Name: "olala1", Cron: &cron1, Message: &message1}); err != nil {
+	err := barngo.RunInTransaction(db, func(tx *sql.Tx) error {
+		r := repository.(*scheduler.PostgresSchedulerRepository)
+		if err := r.CreateTable(tx); err != nil {
+			return err
+		}
+		if err := r.DeleteAll(tx); err != nil {
+			return err
+		}
+
+		cron1 := "*/5 * * * * *"
+		message1 := "{\"type\":\"olala1\"}"
+		if err := r.Create(tx, &scheduler.Schedule{Name: "olala1", Cron: &cron1, Message: &message1}); err != nil {
+			return err
+		}
+
+		// cron2 := "*/5 * * * * *"
+		// nextTs2 := time.Now().UTC().Add(-20 * time.Second)
+		// if err := r.Create(tx, &scheduler.Schedule{Name: "olala2", Cron: &cron2, NextTs: &nextTs2}); err != nil {
+		// 	return err
+		// }
+
+		return nil
+	})
+	if err != nil {
 		panic(err)
 	}
-
-	// cron2 := "*/5 * * * * *"
-	// nextTs2 := time.Now().UTC().Add(-20 * time.Second)
-	// if err := sched.Add(&scheduler.Entry{Name: "olala2", Cron: &cron2, NextTs: &nextTs2}); err != nil {
-	// 	panic(err)
-	// }
 
 	ctx, cancel := context.WithCancel(context.Background())
 
+	sched := scheduler.NewScheduler(db, &scheduler.SchedulerConfig{Repository: repository})
 	sched.StartContext(ctx)
 
 	osSignal := make(chan os.Signal, 1)

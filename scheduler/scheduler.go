@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log/slog"
 	"math"
 	"sync"
@@ -13,40 +12,14 @@ import (
 	"time"
 
 	"github.com/adhocore/gronx"
+	barngo "github.com/bibenga/barn-go"
 )
 
-type Schedule struct {
-	Id       int
-	Name     string
-	IsActive bool
-	Cron     *string
-	NextTs   *time.Time
-	LastTs   *time.Time
-	Message  *string
-}
-
-func (e Schedule) LogValue() slog.Value {
-	// return slog.AnyValue(computeExpensiveValue(e.arg))
-	var args []slog.Attr
-	args = append(args, slog.Int("Id", int(e.Id)))
-	args = append(args, slog.Bool("IsActive", e.IsActive))
-	if e.Cron != nil {
-		args = append(args, slog.String("Cron", *e.Cron))
-	}
-	if e.NextTs != nil {
-		args = append(args, slog.String("NextTs", e.NextTs.String()))
-	}
-	return slog.GroupValue(args...)
-}
-
-type ScheduleMap map[int]*Schedule
-type ScheduleList []*Schedule
-
-type SchedulerHandler func(db *sql.DB, name string, moment time.Time, message *string) error
+type SchedulerHandler func(tx *sql.Tx, name string, moment time.Time, message *string) error
 
 type SchedulerConfig struct {
 	Log        *slog.Logger
-	Query      *ScheduleQuery
+	Repository SchedulerRepository
 	ReloadCron string
 	Handler    SchedulerHandler
 }
@@ -55,8 +28,8 @@ type Scheduler struct {
 	log            *slog.Logger
 	handler        SchedulerHandler
 	db             *sql.DB
-	query          *ScheduleQuery
-	schedules      ScheduleMap
+	repository     SchedulerRepository
+	schedules      map[int]*Schedule
 	reloadSchedule Schedule
 	running        atomic.Bool
 	cancel         context.CancelFunc
@@ -70,11 +43,17 @@ func NewScheduler(db *sql.DB, config *SchedulerConfig) *Scheduler {
 	if config == nil {
 		panic(errors.New("config is nil"))
 	}
-	if config.Query == nil {
-		config.Query = NewDefaultScheduleQuery()
+	if config.Repository == nil {
+		config.Repository = NewDefaultPostgresSchedulerRepository()
+		// or just panic?
+		// panic(errors.New("repository is nil"))
 	}
 	if config.ReloadCron == "" {
 		config.ReloadCron = "*/5 * * * *"
+	} else {
+		if _, err := gronx.NextTick(config.ReloadCron, false); err != nil {
+			panic(err)
+		}
 	}
 	if config.Handler == nil {
 		config.Handler = dummySchedulerHandler
@@ -83,11 +62,11 @@ func NewScheduler(db *sql.DB, config *SchedulerConfig) *Scheduler {
 		config.Log = slog.Default()
 	}
 	scheduler := Scheduler{
-		log:       config.Log,
-		handler:   config.Handler,
-		db:        db,
-		query:     config.Query,
-		schedules: make(ScheduleMap),
+		log:        config.Log,
+		handler:    config.Handler,
+		db:         db,
+		repository: config.Repository,
+		schedules:  make(map[int]*Schedule),
 		reloadSchedule: Schedule{
 			Id:       math.MinInt,
 			Name:     "<reload>",
@@ -96,12 +75,6 @@ func NewScheduler(db *sql.DB, config *SchedulerConfig) *Scheduler {
 		},
 	}
 	return &scheduler
-}
-
-func (s *Scheduler) CreateTable() error {
-	s.log.Info("create table")
-	_, err := s.db.Exec(s.query.CreateTableQuery)
-	return err
 }
 
 func (s *Scheduler) Start() {
@@ -130,9 +103,9 @@ func (s *Scheduler) Stop() {
 }
 
 func (s *Scheduler) run(ctx context.Context) {
-	s.log.Debug("scheduler stated")
+	s.log.Debug("scheduler is stated")
 	defer func() {
-		s.log.Debug("scheduler terminated")
+		s.log.Debug("scheduler is stopped")
 	}()
 
 	s.running.Store(true)
@@ -143,7 +116,7 @@ func (s *Scheduler) run(ctx context.Context) {
 	defer s.stoped.Done()
 
 	if err := s.reload(); err != nil {
-		s.log.Error("db", "error", err)
+		s.log.Error("cannot load", "error", err)
 		panic(err)
 	}
 
@@ -169,18 +142,6 @@ func (s *Scheduler) run(ctx context.Context) {
 					s.log.Error("db", "error", err)
 				}
 			}
-			if e.Cron == nil {
-				s.deactivate(e)
-			} else {
-				if nextTs, err := gronx.NextTickAfter(*e.Cron, *e.NextTs, false); err != nil {
-					panic(err)
-				} else {
-					e.NextTs = &nextTs
-					if e != &s.reloadSchedule {
-						s.update(e)
-					}
-				}
-			}
 		}
 	}
 }
@@ -189,74 +150,71 @@ func (s *Scheduler) reload() error {
 	s.log.Info("reload")
 
 	if s.reloadSchedule.NextTs == nil {
-		if nextTs, err := gronx.NextTick(*s.reloadSchedule.Cron, true); err != nil {
+		if nextTs, err := gronx.NextTick(*s.reloadSchedule.Cron, false); err != nil {
 			return err
 		} else {
 			s.reloadSchedule.NextTs = &nextTs
 		}
 	}
 
-	schedules, err := s.getSchedules()
+	loaded := make(map[int]*Schedule)
+	err := barngo.RunInTransaction(s.db, func(tx *sql.Tx) error {
+		schedules, err := s.repository.FindAllActive(tx)
+		if err != nil {
+			return err
+		}
+		for _, newSchedule := range schedules {
+			s.log.Debug("loaded schedule", "schedule", newSchedule)
+
+			if !newSchedule.IsActive {
+				s.log.Debug("loaded schedule", "schedule", newSchedule)
+				continue
+			}
+
+			if newSchedule.NextTs == nil && newSchedule.Cron == nil {
+				newSchedule.IsActive = false
+				if err := s.repository.Save(tx, newSchedule); err != nil {
+					return err
+				}
+				continue
+			} else if newSchedule.NextTs == nil {
+				if nextTs, err := gronx.NextTick(*newSchedule.Cron, true); err != nil {
+					s.log.Info("invalid cron expression", "schedule", newSchedule)
+					newSchedule.IsActive = false
+					if err := s.repository.Save(tx, newSchedule); err != nil {
+						return err
+					}
+				} else {
+					newSchedule.NextTs = &nextTs
+					if err := s.repository.Save(tx, newSchedule); err != nil {
+						return err
+					}
+				}
+			}
+			loaded[newSchedule.Id] = newSchedule
+		}
+		return nil
+	})
 	if err != nil {
 		return err
 	}
 
-	for id, newSchedule := range schedules {
-		if oldSchedule, ok := s.schedules[id]; ok {
-			// exists
-			if s.IsChanged(oldSchedule, newSchedule) {
-				// changed
-				s.log.Info("changed schedule", "schedule", newSchedule)
-				// s.entries[id] = newEntry
-				s.schedules[id] = newSchedule
-			} else {
-				s.log.Info("unchanged taschedulesk", "schedule", newSchedule)
-				oldSchedule.Name = newSchedule.Name
-				oldSchedule.Message = newSchedule.Message
-			}
+	current := s.schedules
+	for id := range loaded {
+		if _, ok := current[id]; ok {
+			s.log.Info("updated schedule", "schedule", id)
 		} else {
-			// added
-			s.log.Info("new schedule", "schedule", newSchedule.Id)
-			s.schedules[id] = newSchedule
-		}
-		if newSchedule.NextTs == nil {
-			if nextTs, err := gronx.NextTick(*newSchedule.Cron, true); err != nil {
-				return err
-			} else {
-				newSchedule.NextTs = &nextTs
-				s.update(newSchedule)
-			}
+			s.log.Info("added schedule", "schedule", id)
 		}
 	}
-
-	for id, oldSchedule := range s.schedules {
-		if _, ok := schedules[id]; !ok {
-			s.log.Info("deleted schedule", "schedule", oldSchedule.Id)
-			delete(s.schedules, oldSchedule.Id)
+	for id := range current {
+		if _, ok := loaded[id]; !ok {
+			s.log.Info("deleted schedule", "schedule", id)
 		}
 	}
+	s.schedules = loaded
 
 	return nil
-}
-
-func (s *Scheduler) IsChanged(oldEntry *Schedule, newEntry *Schedule) bool {
-	if oldEntry.Cron != nil && newEntry.Cron != nil {
-		if *oldEntry.Cron != *newEntry.Cron {
-			return true
-		}
-	} else if oldEntry.Cron != nil || newEntry.Cron != nil {
-		return true
-	}
-
-	if oldEntry.NextTs != nil && newEntry.NextTs != nil {
-		if *oldEntry.NextTs != *newEntry.NextTs {
-			return true
-		}
-	} else if oldEntry.NextTs != nil || newEntry.NextTs != nil {
-		return true
-	}
-
-	return false
 }
 
 func (s *Scheduler) getNext() *Schedule {
@@ -271,173 +229,55 @@ func (s *Scheduler) getNext() *Schedule {
 }
 
 func (s *Scheduler) processTask(schedule *Schedule) error {
-	if schedule != nil {
-		// process
-		s.log.Info("tik ", "schedule", schedule.Id, "nextTs", schedule.NextTs)
-
-		if err := s.handler(s.db, schedule.Name, *schedule.NextTs, schedule.Message); err != nil {
+	if schedule == nil {
+		return errors.New("code bug: schedule is nil")
+	}
+	return barngo.RunInTransaction(s.db, func(tx *sql.Tx) error {
+		dbSchedule, err := s.repository.FindOne(tx, schedule.Id)
+		if err != nil {
 			return err
 		}
-
-		// calculate next time
-		if schedule.Cron != nil {
-			nextTs, err := gronx.NextTick(*schedule.Cron, false)
-			if err != nil {
-				s.log.Info("cron is invalid", "schedule", schedule)
-				schedule.IsActive = false
-			} else {
-				schedule.LastTs = schedule.NextTs
-				schedule.NextTs = &nextTs
+		if dbSchedule == nil {
+			s.log.Info("schedule is not active or was deleted", "schedule", schedule.Id)
+			delete(s.schedules, schedule.Id)
+			return nil
+		}
+		if dbSchedule.NextTs == nil && dbSchedule.Cron == nil {
+			s.log.Info("schedule is not valid", "schedule", schedule.Id)
+			dbSchedule.IsActive = false
+			if err := s.repository.Save(tx, dbSchedule); err != nil {
+				return err
 			}
-		} else {
-			schedule.IsActive = false
 		}
-		err := s.update(schedule)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (s *Scheduler) getSchedules() (ScheduleMap, error) {
-	stmt, err := s.db.Prepare(s.query.SelectQuery)
-	if err != nil {
-		return nil, err
-	}
-	defer stmt.Close()
-
-	schedules := make(ScheduleMap)
-
-	rows, err := stmt.Query()
-	if err != nil {
-		return nil, err
-	}
-	for rows.Next() {
-		var schedule Schedule = Schedule{}
-		err := rows.Scan(&schedule.Id, &schedule.Name, &schedule.IsActive, &schedule.Cron, &schedule.NextTs, &schedule.LastTs, &schedule.Message)
-		if err != nil {
-			return nil, err
-		}
-		if schedule.IsActive {
-			if schedule.Cron == nil && schedule.NextTs == nil {
-				// we don't know when to do...
-				s.log.Warn("invalid schedule", "schedule", schedule)
-				s.deactivate(&schedule)
+		if dbSchedule.NextTs.Equal(*schedule.NextTs) || dbSchedule.NextTs.Before(*schedule.NextTs) {
+			if err := s.handler(tx, schedule.Name, *schedule.NextTs, schedule.Message); err != nil {
+				return err
+			}
+			if dbSchedule.Cron == nil {
+				dbSchedule.IsActive = false
+				dbSchedule.LastTs = dbSchedule.NextTs
 			} else {
-				if schedule.NextTs == nil {
-					nextTs, err := gronx.NextTick(*schedule.Cron, true)
-					if err != nil {
-						s.log.Info("invalid cron string", "schedule", schedule)
-						continue
-					}
-					schedule.NextTs = &nextTs
-					s.update(&schedule)
+				if nextTs, err := gronx.NextTick(*dbSchedule.Cron, false); err != nil {
+					s.log.Info("invalid cron expression", "schedule", dbSchedule.Id, "error", err)
+					dbSchedule.IsActive = false
+					dbSchedule.LastTs = dbSchedule.NextTs
+				} else {
+					dbSchedule.LastTs = dbSchedule.NextTs
+					dbSchedule.NextTs = &nextTs
 				}
-				s.log.Info("the schedule is active", "schedule", schedule)
-				schedules[schedule.Id] = &schedule
+			}
+			if err := s.repository.Save(tx, dbSchedule); err != nil {
+				return err
 			}
 		} else {
-			s.log.Info("the schedule is inactive", "schedule", schedule)
+			s.log.Info("schedule is changed and will be rescheduled", "schedule", schedule.Id)
 		}
-	}
-	return schedules, nil
+		s.schedules[dbSchedule.Id] = dbSchedule
+		return nil
+	})
 }
 
-func (s *Scheduler) update(schedule *Schedule) error {
-	s.log.Info("update the schedule", "schedule", schedule)
-	res, err := s.db.Exec(
-		s.query.UpdateQuery,
-		schedule.IsActive, schedule.NextTs, schedule.LastTs,
-		schedule.Id,
-	)
-	if err != nil {
-		return err
-	}
-	rowsAffected, err := res.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if rowsAffected != 1 {
-		// not an erros, need to reload entries...
-		return fmt.Errorf("an object deleted")
-	}
-	return nil
-}
-
-func (s *Scheduler) deactivate(schedule *Schedule) error {
-	schedule.IsActive = false
-	s.log.Info("deactivate the schedule", "schedule", schedule)
-	res, err := s.db.Exec(
-		s.query.UpdateIsActiveQuery,
-		false, schedule.Id,
-	)
-	if err != nil {
-		return err
-	}
-	rowsAffected, err := res.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if rowsAffected != 1 {
-		s.log.Info("the schedule was deleted somewhen", "schedule", schedule)
-	}
-	return nil
-}
-
-func (s *Scheduler) Add(schedule *Schedule) error {
-	if schedule.Cron == nil && schedule.NextTs == nil {
-		return fmt.Errorf("invalid cron and/or nextTs	")
-	}
-
-	stmt, err := s.db.Prepare(s.query.InsertQuery)
-	if err != nil {
-		return err
-	}
-	defer stmt.Close()
-
-	err = stmt.QueryRow(schedule.Name, schedule.Cron, schedule.NextTs, schedule.Message).Scan(&schedule.Id)
-	if err != nil {
-		return err
-	}
-	s.log.Info("the schedule is created", "schedule", schedule)
-	return nil
-}
-
-func (s *Scheduler) Delete(id int) error {
-	s.log.Info("delete the schedule", "schedule", id)
-	res, err := s.db.Exec(
-		s.query.DeleteQuery,
-		id,
-	)
-	if err != nil {
-		return err
-	}
-	rowsAffected, err := res.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if rowsAffected != 1 {
-		s.log.Info("the schedule was already deleted", "schedule", id)
-	}
-	return nil
-}
-
-func (s *Scheduler) DeleteAll() error {
-	s.log.Info("delete all schedules")
-	res, err := s.db.Exec(s.query.DeleteAllQuery)
-	if err != nil {
-		return err
-	}
-	rowsAffected, err := res.RowsAffected()
-	if err != nil {
-		return err
-	}
-	s.log.Info("all schedules is deleted", "RowsAffected", rowsAffected)
-	return nil
-}
-
-func dummySchedulerHandler(db *sql.DB, name string, moment time.Time, message *string) error {
+func dummySchedulerHandler(tx *sql.Tx, name string, moment time.Time, message *string) error {
 	var payload map[string]interface{}
 	if message != nil {
 		if err := json.Unmarshal([]byte(*message), &payload); err != nil {

@@ -13,13 +13,13 @@ type LeaderElectionHandler func(leader bool) error
 
 type LeaderElectorConfig struct {
 	Log     *slog.Logger
-	Lock    *Lock
+	Lock    *Locker
 	Handler LeaderElectionHandler
 }
 
 type LeaderElector struct {
 	log     *slog.Logger
-	lock    *Lock
+	lock    *Locker
 	handler LeaderElectionHandler
 	running atomic.Bool
 	cancel  context.CancelFunc
@@ -110,18 +110,14 @@ func (l *LeaderElector) run(ctx context.Context) {
 }
 
 func (l *LeaderElector) open() error {
-	if _, err := l.lock.Create(); err != nil {
-		panic(err)
-	}
 	if l.lock.IsLocked() {
-		return l.onElected()
+		return errors.New("codebug: the lock is locked")
+	}
+	if locked, err := l.lock.TryLock(); err != nil {
+		return err
 	} else {
-		if locked, err := l.lock.TryLock(); err != nil {
-			return err
-		} else {
-			if locked {
-				return l.onElected()
-			}
+		if locked {
+			return l.onElected()
 		}
 	}
 	return nil
@@ -144,11 +140,7 @@ func (l *LeaderElector) hearbeat() error {
 				l.log.Info("the lock was rotten and it is acquired")
 				return l.onElected()
 			} else {
-				if state, err := l.lock.State(); err != nil {
-					return err
-				} else {
-					l.log.Info("the lock state", "state", state)
-				}
+				// l.log.Info("the lock was rotten and it is acquired")
 			}
 		}
 	}

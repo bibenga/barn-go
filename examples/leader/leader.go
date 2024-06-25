@@ -2,11 +2,13 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"log/slog"
 	"os"
 	"os/signal"
 	"time"
 
+	barngo "github.com/bibenga/barn-go"
 	"github.com/bibenga/barn-go/examples"
 	"github.com/bibenga/barn-go/lock"
 )
@@ -17,13 +19,23 @@ func main() {
 	db := examples.InitDb(false)
 	defer db.Close()
 
-	leaderLock := lock.NewLockWithConfig(db, &lock.LockConfig{
-		Ttl:      10 * time.Second,
-		Hearbeat: 1 * time.Second,
+	repository := lock.NewDefaultPostgresLockRepository()
+	err := barngo.RunInTransaction(db, func(tx *sql.Tx) error {
+		pgRepository := repository.(*lock.PostgresLockRepository)
+		if err := pgRepository.CreateTable(tx); err != nil {
+			return err
+		}
+		return nil
 	})
-	if err := leaderLock.CreateTable(); err != nil {
+	if err != nil {
 		panic(err)
 	}
+
+	leaderLock := lock.NewLockWithConfig(db, &lock.LockerConfig{
+		Repository: repository,
+		Ttl:        10 * time.Second,
+		Hearbeat:   1 * time.Second,
+	})
 	leader := lock.NewLeaderElector(&lock.LeaderElectorConfig{
 		Lock: leaderLock,
 	})

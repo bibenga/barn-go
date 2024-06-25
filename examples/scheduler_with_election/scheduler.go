@@ -2,11 +2,13 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"log/slog"
 	"os"
 	"os/signal"
 	"time"
 
+	barngo "github.com/bibenga/barn-go"
 	"github.com/bibenga/barn-go/examples"
 	"github.com/bibenga/barn-go/lock"
 	"github.com/bibenga/barn-go/scheduler"
@@ -18,29 +20,52 @@ func main() {
 	db := examples.InitDb(false)
 	defer db.Close()
 
-	sched := scheduler.NewScheduler(db, &scheduler.SchedulerConfig{})
-	if err := sched.CreateTable(); err != nil {
-		panic(err)
-	}
-	if err := sched.DeleteAll(); err != nil {
-		panic(err)
-	}
+	lockRepository := lock.NewDefaultPostgresLockRepository()
+	schedulerRepository := scheduler.NewDefaultPostgresSchedulerRepository()
 
-	cron1 := "*/5 * * * * *"
-	message1 := "{\"type\":\"olala1\"}"
-	if err := sched.Add(&scheduler.Schedule{Name: "olala1", Cron: &cron1, Message: &message1}); err != nil {
+	err := barngo.RunInTransaction(db, func(tx *sql.Tx) error {
+		pgLockRepository := lockRepository.(*lock.PostgresLockRepository)
+		if err := pgLockRepository.CreateTable(tx); err != nil {
+			return err
+		}
+
+		pgSchedulerRepository := schedulerRepository.(*scheduler.PostgresSchedulerRepository)
+		if err := pgSchedulerRepository.CreateTable(tx); err != nil {
+			return err
+		}
+		if err := pgSchedulerRepository.DeleteAll(tx); err != nil {
+			return err
+		}
+
+		cron1 := "*/5 * * * * *"
+		message1 := "{\"type\":\"olala1\"}"
+		if err := pgSchedulerRepository.Create(tx, &scheduler.Schedule{Name: "olala1", Cron: &cron1, Message: &message1}); err != nil {
+			return err
+		}
+
+		// cron2 := "*/5 * * * * *"
+		// nextTs2 := time.Now().UTC().Add(-20 * time.Second)
+		// if err := r.Create(tx, &scheduler.Schedule{Name: "olala2", Cron: &cron2, NextTs: &nextTs2}); err != nil {
+		// 	return err
+		// }
+
+		return nil
+	})
+	if err != nil {
 		panic(err)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	leaderLock := lock.NewLockWithConfig(db, &lock.LockConfig{
-		Ttl:      10 * time.Second,
-		Hearbeat: 1 * time.Second,
+	sched := scheduler.NewScheduler(db, &scheduler.SchedulerConfig{
+		Repository: schedulerRepository,
 	})
-	if err := leaderLock.CreateTable(); err != nil {
-		panic(err)
-	}
+
+	leaderLock := lock.NewLockWithConfig(db, &lock.LockerConfig{
+		Repository: lockRepository,
+		Ttl:        10 * time.Second,
+		Hearbeat:   1 * time.Second,
+	})
 	leader := lock.NewLeaderElector(&lock.LeaderElectorConfig{
 		Lock: leaderLock,
 		Handler: func(leader bool) error {

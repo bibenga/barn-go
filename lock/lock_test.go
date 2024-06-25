@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	barngo "github.com/bibenga/barn-go"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/jackc/pgx/v5/tracelog"
@@ -70,8 +71,14 @@ func setup(t *testing.T) *sql.DB {
 	assert.NotNil(db)
 	assert.NoError(db.Ping())
 
-	lockQuery := NewDefaultLockQuery()
-	_, err = db.Exec(lockQuery.CreateTableQuery)
+	repository := NewDefaultPostgresLockRepository()
+	err = barngo.RunInTransaction(db, func(tx *sql.Tx) error {
+		pgRepository := repository.(*PostgresLockRepository)
+		if err := pgRepository.CreateTable(tx); err != nil {
+			return err
+		}
+		return nil
+	})
 	assert.NoError(err)
 
 	t.Cleanup(func() {
@@ -93,7 +100,7 @@ func TestTryLock(t *testing.T) {
 	_, err = db.Exec(`insert into barn_lock (name) values ('unnecessary')`)
 	assert.NoError(err)
 
-	l := NewLockWithConfig(db, &LockConfig{Name: "host1"})
+	l := NewLockWithConfig(db, &LockerConfig{Name: "host1"})
 	captured, err := l.TryLock()
 	assert.NoError(err)
 	assert.True(captured)
@@ -110,15 +117,4 @@ func TestTryLock(t *testing.T) {
 	assert.Equal(l.lockedAt.Truncate(time.Millisecond), locked_at.In(time.UTC).Truncate(time.Millisecond))
 	assert.NotNil(owner)
 	assert.Equal(l.name, *owner)
-}
-
-func TestLogState(t *testing.T) {
-	assert := require.New(t)
-
-	db := setup(t)
-
-	l := NewLockWithConfig(db, &LockConfig{Name: "host1"})
-	state, err := l.State()
-	assert.NoError(err)
-	assert.NotNil(state)
 }

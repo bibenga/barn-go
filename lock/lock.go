@@ -9,36 +9,30 @@ import (
 	"os"
 	"time"
 
+	barngo "github.com/bibenga/barn-go"
 	"github.com/google/uuid"
 )
 
-// Information about lock from DB
-type LockState struct {
-	Name     string
-	LockedAt *time.Time
-	Owner    *string
+type LockerConfig struct {
+	Log        *slog.Logger
+	Name       string
+	Repository LockRepository
+	LockName   string
+	Ttl        time.Duration
+	Hearbeat   time.Duration
 }
 
-type LockConfig struct {
-	Log      *slog.Logger
-	Name     string
-	Query    *LockQuery
-	LockName string
-	Ttl      time.Duration
-	Hearbeat time.Duration
-}
-
-// Lock is the mutex entry in the database.
-type Lock struct {
-	log      *slog.Logger
-	name     string
-	db       *sql.DB
-	query    *LockQuery
-	lockName string
-	ttl      time.Duration
-	hearbeat time.Duration
-	locked   bool
-	lockedAt *time.Time
+// Locker is the mutex entry in the database.
+type Locker struct {
+	log        *slog.Logger
+	name       string
+	db         *sql.DB
+	repository LockRepository
+	lockName   string
+	ttl        time.Duration
+	hearbeat   time.Duration
+	locked     bool
+	lockedAt   *time.Time
 }
 
 // The default TTL is 60 sec
@@ -47,12 +41,8 @@ const DefaultLockTtl = 60 * time.Second
 // The defaulth heartbeat interval is 20 sec
 const DefaultHeartbeat = DefaultLockTtl / 3
 
-func NewLock(db *sql.DB) *Lock {
-	return NewLockWithConfig(db, &LockConfig{})
-}
-
 // NewLockWithConfig create new Lock with config, during initialization config is adjusted
-func NewLockWithConfig(db *sql.DB, config *LockConfig) *Lock {
+func NewLockWithConfig(db *sql.DB, config *LockerConfig) *Locker {
 	if db == nil {
 		panic(errors.New("db is nil"))
 	}
@@ -75,8 +65,8 @@ func NewLockWithConfig(db *sql.DB, config *LockConfig) *Lock {
 		}
 		config.Name = name
 	}
-	if config.Query == nil {
-		config.Query = NewDefaultLockQuery()
+	if config.Repository == nil {
+		config.Repository = NewDefaultPostgresLockRepository()
 	}
 	if config.LockName == "" {
 		config.LockName = "barn"
@@ -96,112 +86,93 @@ func NewLockWithConfig(db *sql.DB, config *LockConfig) *Lock {
 		)
 	}
 
-	lock := &Lock{
-		log:      config.Log,
-		name:     config.Name,
-		db:       db,
-		query:    config.Query,
-		lockName: config.LockName,
-		ttl:      config.Ttl,
-		hearbeat: config.Hearbeat,
-		locked:   false,
-		lockedAt: nil,
+	lock := &Locker{
+		log:        config.Log,
+		name:       config.Name,
+		db:         db,
+		repository: config.Repository,
+		lockName:   config.LockName,
+		ttl:        config.Ttl,
+		hearbeat:   config.Hearbeat,
+		locked:     false,
+		lockedAt:   nil,
 	}
 	return lock
 }
 
-func (l *Lock) Name() string {
+func NewDefaultLock(db *sql.DB) *Locker {
+	return NewLockWithConfig(db, &LockerConfig{})
+}
+
+func (l *Locker) Name() string {
 	return l.name
 }
 
-func (l *Lock) LockName() string {
+func (l *Locker) LockName() string {
 	return l.lockName
 }
 
-func (l *Lock) IsLocked() bool {
+func (l *Locker) IsLocked() bool {
 	return l.locked
 }
 
-func (l *Lock) Ttl() time.Duration {
+func (l *Locker) Ttl() time.Duration {
 	return l.ttl
 }
 
-func (l *Lock) Hearbeat() time.Duration {
+func (l *Locker) Hearbeat() time.Duration {
 	return l.hearbeat
 }
 
-func (l *Lock) LockedAt() *time.Time {
+func (l *Locker) LockedAt() *time.Time {
 	return l.lockedAt
 }
 
-func (l *Lock) CreateTable() error {
-	l.log.Info("create lock table")
-	_, err := l.db.Exec(l.query.CreateTableQuery)
-	return err
-}
-
-// create a lock record in DB if it doesn't exists
-func (l *Lock) Create() (bool, error) {
-	l.log.Info("create the lock")
-
-	res, err := l.db.Exec(
-		l.query.InsertQuery,
-		l.lockName,
-	)
-	if err != nil {
-		l.log.Error("cannot create lock", "error", err)
-		return false, err
-	}
-	rowsAffected, err := res.RowsAffected()
-	if err != nil {
-		l.log.Error("db error", "error", err)
-		return false, err
-	}
-	l.log.Debug("sql", "RowsAffected", rowsAffected)
-	if rowsAffected == 1 {
-		l.log.Info("the lock is created")
-	} else {
-		l.log.Info("the lock was created by someone")
-	}
-	return rowsAffected == 1, nil
-}
-
 // Try to acquire the lock
-func (l *Lock) TryLock() (bool, error) {
+func (l *Locker) TryLock() (bool, error) {
 	if l.locked {
 		return false, errors.New("the lock is locked")
 	}
-	lockedAt := time.Now().UTC()
-	rottenTs := lockedAt.Add(-l.ttl)
-	res, err := l.db.Exec(
-		l.query.LockQuery,
-		l.name, lockedAt,
-		l.lockName, rottenTs,
-	)
-	if err != nil {
-		l.log.Error("db error", "error", err)
-		return false, err
-	}
-	if rowsAffected, err := res.RowsAffected(); err != nil {
-		l.log.Error("db error", "error", err)
-		return false, err
-	} else {
-		l.log.Debug("sql", "RowsAffected", rowsAffected)
-		if rowsAffected == 1 {
-			l.locked = true
-			l.lockedAt = &lockedAt
+	l.log.Info("TryLock")
+	err := barngo.RunInTransaction(l.db, func(tx *sql.Tx) error {
+		lock, err := l.repository.FindOne(tx, l.lockName)
+		if err != nil {
+			return err
 		}
-		return l.locked, nil
-	}
+		l.log.Info("loaded", "lock", lock)
+		if lock == nil {
+			if err := l.repository.Create(tx, l.lockName); err != nil {
+				return err
+			}
+			lock, err = l.repository.FindOne(tx, l.lockName)
+			if err != nil {
+				return err
+			}
+		}
+		now := time.Now().UTC()
+		rotten := now.Add(-l.ttl)
+		if lock.LockedAt == nil || lock.LockedAt.Before(rotten) {
+			lock.LockedAt = &now
+			lock.Owner = &l.name
+			l.log.Info("locked", "lock", lock)
+			if err = l.repository.Save(tx, lock); err != nil {
+				return err
+			}
+			l.locked = true
+			l.lockedAt = lock.LockedAt
+		}
+		return nil
+	})
+	return l.locked, err
 }
 
 // Acquire the lock
-func (l *Lock) Lock() (bool, error) {
-	return l.LockContext(context.Background())
+func (l *Locker) Lock(interval time.Duration) (bool, error) {
+	return l.LockContext(context.Background(), interval)
 }
 
 // Acquire the lock
-func (l *Lock) LockContext(ctx context.Context) (bool, error) {
+func (l *Locker) LockContext(ctx context.Context, interval time.Duration) (bool, error) {
 	if l.locked {
 		return false, errors.New("the lock is locked")
 	}
@@ -214,7 +185,7 @@ func (l *Lock) LockContext(ctx context.Context) (bool, error) {
 		}
 	}
 
-	ticker := time.NewTicker(1 * time.Second)
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
 		select {
@@ -231,95 +202,70 @@ func (l *Lock) LockContext(ctx context.Context) (bool, error) {
 }
 
 // Update the acquired lock data
-func (l *Lock) Confirm() (bool, error) {
+func (l *Locker) Confirm() (bool, error) {
 	if !l.locked {
 		return false, errors.New("the lock is not locked")
 	}
-	lockedAt := time.Now().UTC()
-	rottenTs := lockedAt.Add(-l.ttl)
-	res, err := l.db.Exec(
-		l.query.ConfirmQuery,
-		l.name, lockedAt,
-		l.lockName, l.name, rottenTs,
-	)
-	if err != nil {
-		l.log.Error("db error", "error", err)
-		return false, err
-	}
-	if rowsAffected, err := res.RowsAffected(); err != nil {
-		l.log.Error("db error", "error", err)
-		return false, err
-	} else {
-		l.log.Debug("sql", "RowsAffected", rowsAffected)
-		if rowsAffected == 1 {
-			l.lockedAt = &lockedAt
-			l.log.Info("the lock is confirmed")
+	l.log.Info("confirm")
+	err := barngo.RunInTransaction(l.db, func(tx *sql.Tx) error {
+		lock, err := l.repository.FindOne(tx, l.lockName)
+		if err != nil {
+			return err
+		}
+		if lock == nil {
+			return sql.ErrNoRows
+		}
+		l.log.Info("loaded", "lock", lock)
+		now := time.Now().UTC()
+		rotten := now.Add(-l.ttl)
+		if lock.LockedAt != nil && lock.LockedAt.After(rotten) && lock.Owner != nil && *lock.Owner == l.name {
+			lock.LockedAt = &now
+			l.log.Info("confirmed", "lock", lock)
+			if err = l.repository.Save(tx, lock); err != nil {
+				return err
+			}
+			l.locked = true
+			l.lockedAt = lock.LockedAt
 		} else {
 			l.locked = false
 			l.lockedAt = nil
-			l.log.Warn("the lock is not confirmed")
 		}
-		return l.locked, nil
-	}
+		return nil
+	})
+	return l.locked, err
 }
 
 // Release lock
-func (l *Lock) Unlock() (bool, error) {
+func (l *Locker) Unlock() (bool, error) {
 	if !l.locked {
 		return false, errors.New("the lock is not locked")
 	}
-	rottenTs := time.Now().UTC().Add(-l.ttl)
-	res, err := l.db.Exec(
-		l.query.UnlockQuery,
-		l.lockName, l.name, rottenTs,
-	)
-	if err != nil {
-		l.log.Error("db error", "error", err)
-		return false, err
-	}
-	if rowsAffected, err := res.RowsAffected(); err != nil {
-		l.log.Error("db error", "error", err)
-		return false, err
-	} else {
-		l.log.Debug("sql", "RowsAffected", rowsAffected)
+	unlocked := false
+	err := barngo.RunInTransaction(l.db, func(tx *sql.Tx) error {
+		lock, err := l.repository.FindOne(tx, l.lockName)
+		if err != nil {
+			return err
+		}
+		if lock == nil {
+			return sql.ErrNoRows
+		}
+		l.log.Info("loaded", "lock", lock)
+		now := time.Now().UTC()
+		rotten := now.Add(-l.ttl)
+		if lock.LockedAt != nil && lock.LockedAt.After(rotten) && lock.Owner != nil && *lock.Owner == l.name {
+			lock.LockedAt = nil
+			lock.Owner = nil
+			l.log.Info("unloked", "lock", lock)
+			if err = l.repository.Save(tx, lock); err != nil {
+				return err
+			}
+			unlocked = true
+		} else {
+			l.log.Info("unlok failed", "lock", lock)
+		}
 		l.locked = false
 		l.lockedAt = nil
-		if rowsAffected == 1 {
-			l.log.Info("the lock is released")
-		} else {
-			l.log.Warn("the lock cannot be released")
-		}
-		return rowsAffected == 1, nil
-	}
-}
-
-// Read lock state from DB
-func (l *Lock) State() (*LockState, error) {
-	stmt, err := l.db.Prepare(l.query.SelectQuery)
-	if err != nil {
-		l.log.Error("cannot prepare query", "error", err)
-		return nil, err
-	}
-	defer stmt.Close()
-	var state = LockState{Name: l.lockName}
-	row := stmt.QueryRow(l.lockName)
-	switch err := row.Scan(&state.LockedAt, &state.Owner); err {
-	case nil:
-		lockedAtAttr := slog.Any("LockedAt", nil)
-		if state.LockedAt != nil {
-			lockedAtAttr.Value = slog.TimeValue(*state.LockedAt)
-		}
-		ownerAttr := slog.Any("Owner", nil)
-		if state.Owner != nil {
-			ownerAttr.Value = slog.StringValue(*state.Owner)
-		}
-		l.log.Info("the lock is captured", lockedAtAttr, ownerAttr)
-		return &state, nil
-	case sql.ErrNoRows:
-		l.log.Error("the lock is not found")
-		return nil, err
-	default:
-		l.log.Error("db error", "error", err)
-		return nil, err
-	}
+		return nil
+	})
+	return unlocked, err
 }

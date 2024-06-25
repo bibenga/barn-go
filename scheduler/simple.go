@@ -4,34 +4,32 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 	"log/slog"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/adhocore/gronx"
+	barngo "github.com/bibenga/barn-go"
 )
 
-type SimpleSchedulerHandler func(tx *sql.Tx, name string, moment time.Time, message *string) error
-
 type SimpleSchedulerConfig struct {
-	Log     *slog.Logger
-	Query   *SimpleScheduleQuery
-	Cron    string
-	Handler SimpleSchedulerHandler
+	Log        *slog.Logger
+	Repository SchedulerRepository
+	Cron       string
+	Handler    SchedulerHandler
 }
 
 type SimpleScheduler struct {
-	log     *slog.Logger
-	handler SimpleSchedulerHandler
-	db      *sql.DB
-	query   *SimpleScheduleQuery
-	running atomic.Bool
-	cancel  context.CancelFunc
-	stoped  sync.WaitGroup
-	cron    string
-	nextTs  time.Time
+	log        *slog.Logger
+	handler    SchedulerHandler
+	db         *sql.DB
+	repository SchedulerRepository
+	running    atomic.Bool
+	cancel     context.CancelFunc
+	stoped     sync.WaitGroup
+	cron       string
+	nextTs     time.Time
 }
 
 func NewSimpleScheduler(db *sql.DB, config *SimpleSchedulerConfig) *SimpleScheduler {
@@ -41,32 +39,32 @@ func NewSimpleScheduler(db *sql.DB, config *SimpleSchedulerConfig) *SimpleSchedu
 	if config == nil {
 		panic(errors.New("config is nil"))
 	}
-	if config.Query == nil {
-		config.Query = NewDefaultSimpleScheduleQuery()
+	if config.Repository == nil {
+		config.Repository = NewDefaultPostgresSchedulerRepository()
+		// or just panic?
+		// panic(errors.New("repository is nil"))
 	}
 	if config.Cron == "" {
 		config.Cron = "* * * * *"
+	} else {
+		if _, err := gronx.NextTick(config.Cron, false); err != nil {
+			panic(err)
+		}
 	}
 	if config.Handler == nil {
-		config.Handler = dummySimpleSchedulerHandler
+		config.Handler = dummySchedulerHandler
 	}
 	if config.Log == nil {
 		config.Log = slog.Default()
 	}
 	scheduler := SimpleScheduler{
-		log:     config.Log,
-		handler: config.Handler,
-		db:      db,
-		query:   config.Query,
-		cron:    config.Cron,
+		log:        config.Log,
+		handler:    config.Handler,
+		db:         db,
+		repository: config.Repository,
+		cron:       config.Cron,
 	}
 	return &scheduler
-}
-
-func (s *SimpleScheduler) CreateTable() error {
-	s.log.Info("create table")
-	_, err := s.db.Exec(s.query.CreateTableQuery)
-	return err
 }
 
 func (s *SimpleScheduler) Start() {
@@ -124,13 +122,9 @@ func (s *SimpleScheduler) run(ctx context.Context) {
 			s.log.Info("terminate")
 			return
 		case <-timer.C:
-			if err := s.initTasks(); err != nil {
-				panic(err)
-			}
-
 			limit := 50
 			i := 0
-			for i < 10 {
+			for i < 100 {
 				if processed, err := s.processTasks(limit); err != nil {
 					panic(err)
 				} else {
@@ -149,155 +143,46 @@ func (s *SimpleScheduler) run(ctx context.Context) {
 	}
 }
 
-func (s *SimpleScheduler) initTasks() error {
-	s.log.Info("initTasks")
-
-	tx, err := s.db.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-
-	stmt, err := tx.Prepare(s.query.SelectForInitQuery)
-	if err != nil {
-		return err
-	}
-	defer stmt.Close()
-
-	rows, err := stmt.Query()
-	if err != nil {
-		return err
-	}
-
-	processed := 0
-	for rows.Next() {
-		processed += 1
-		var t Schedule = Schedule{}
-		err := rows.Scan(&t.Id, &t.Name, &t.IsActive, &t.Cron, &t.NextTs, &t.LastTs, &t.Message)
-		if err != nil {
-			return err
-		}
-		s.log.Info("process schedule", "schedule", t)
-		if t.IsActive {
-			if t.Cron == nil && t.NextTs == nil {
-				s.log.Warn("invalid schedule", "schedule", t)
-				s.deactivate(tx, t)
-			} else if t.Cron != nil && t.NextTs == nil {
-				if nextTs, err := gronx.NextTick(*t.Cron, true); err != nil {
-					return err
-				} else {
-					t.NextTs = &nextTs
-					s.update(tx, &t)
-				}
-			}
-		} else {
-			s.log.Info("the schedule is inactive", "schedule", t)
-		}
-	}
-	s.log.Info("processed", "count", processed)
-
-	if err = tx.Commit(); err != nil {
-		return err
-	}
-	return nil
-}
-
 func (s *SimpleScheduler) processTasks(limit int) (int, error) {
 	s.log.Info("process")
 
-	tx, err := s.db.Begin()
-	if err != nil {
-		return 0, err
-	}
-	defer tx.Rollback()
-
-	stmt, err := tx.Prepare(s.query.SelectForProcessQuery)
-	if err != nil {
-		return 0, err
-	}
-	defer stmt.Close()
-
-	rows, err := stmt.Query(limit)
-	if err != nil {
-		return 0, err
-	}
 	processed := 0
-	for rows.Next() {
-		processed += 1
-		var t Schedule = Schedule{}
-		err := rows.Scan(&t.Id, &t.Name, &t.IsActive, &t.Cron, &t.NextTs, &t.LastTs, &t.Message)
+	err := barngo.RunInTransaction(s.db, func(tx *sql.Tx) error {
+		schedules, err := s.repository.FindActiveAndExpired(tx, nil, limit)
 		if err != nil {
-			return 0, err
+			return err
 		}
-		if t.IsActive {
-			if err := s.handler(tx, t.Name, *t.NextTs, t.Message); err != nil {
-				return 0, err
-			}
-
-			if t.Cron == nil && t.NextTs == nil {
-				s.log.Warn("invalid schedule", "schedule", t)
-				s.deactivate(tx, t)
-			} else if t.Cron == nil {
-				s.deactivate(tx, t)
-			} else {
-				if nextTs, err := gronx.NextTick(*t.Cron, false); err != nil {
-					return 0, err
-				} else {
-					t.NextTs = &nextTs
-					s.update(tx, &t)
+		for _, schedule := range schedules {
+			processed += 1
+			s.log.Debug("process schedule", "schedule", schedule)
+			if schedule.NextTs == nil && schedule.Cron == nil {
+				s.log.Info("schedule is not valid", "schedule", schedule.Id)
+				schedule.IsActive = false
+				if err := s.repository.Save(tx, schedule); err != nil {
+					return err
 				}
 			}
-		} else {
-			s.log.Info("the schedule is inactive", "schedule", t)
+			if err := s.handler(tx, schedule.Name, *schedule.NextTs, schedule.Message); err != nil {
+				return err
+			}
+			if schedule.Cron == nil {
+				schedule.IsActive = false
+				schedule.LastTs = schedule.NextTs
+			} else {
+				if nextTs, err := gronx.NextTick(*schedule.Cron, false); err != nil {
+					s.log.Info("invalid cron expression", "schedule", schedule.Id, "error", err)
+					schedule.IsActive = false
+					schedule.LastTs = schedule.NextTs
+				} else {
+					schedule.LastTs = schedule.NextTs
+					schedule.NextTs = &nextTs
+				}
+			}
+			if err := s.repository.Save(tx, schedule); err != nil {
+				return err
+			}
 		}
-	}
-	s.log.Info("processed", "count", processed)
-
-	if err = tx.Commit(); err != nil {
-		return 0, err
-	}
-	return processed, nil
-}
-
-func (s *SimpleScheduler) update(tx *sql.Tx, schedule *Schedule) error {
-	s.log.Info("update the schedule", "schedule", schedule)
-	res, err := tx.Exec(
-		s.query.UpdateQuery,
-		schedule.IsActive, schedule.NextTs, schedule.LastTs, schedule.Id,
-	)
-	if err != nil {
-		return err
-	}
-	rowsAffected, err := res.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if rowsAffected != 1 {
-		return fmt.Errorf("we inside select for update, what's happened?")
-	}
-	return nil
-}
-
-func (s *SimpleScheduler) deactivate(tx *sql.Tx, schedule Schedule) error {
-	schedule.IsActive = false
-	s.log.Info("deactivate the schedule", "schedule", schedule)
-	res, err := tx.Exec(
-		s.query.UpdateIsActiveQuery,
-		false, schedule.Id,
-	)
-	if err != nil {
-		return err
-	}
-	rowsAffected, err := res.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if rowsAffected != 1 {
-		return fmt.Errorf("we inside select for update, what's happened?")
-	}
-	return nil
-}
-
-func dummySimpleSchedulerHandler(tx *sql.Tx, name string, moment time.Time, message *string) error {
-	return dummySchedulerHandler(nil, name, moment, message)
+		return nil
+	})
+	return processed, err
 }

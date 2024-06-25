@@ -16,24 +16,11 @@ func main() {
 	db := examples.InitDb(false)
 	defer db.Close()
 
-	sched := scheduler.NewSimpleScheduler(db, &scheduler.SimpleSchedulerConfig{
-		Cron: "*/5 * * * * *",
-	})
-	if err := sched.CreateTable(); err != nil {
-		panic(err)
-	}
-	// if err := sched.DeleteAll(); err != nil {
-	// 	panic(err)
-	// }
-
-	// cron1 := "*/5 * * * * *"
-	// message1 := "{\"type\":\"olala1\"}"
-	// if err := sched.Add(&scheduler.Task{Name: "olala1", Cron: &cron1, Message: &message1}); err != nil {
-	// 	panic(err)
-	// }
+	repository := scheduler.NewDefaultPostgresSchedulerRepository()
 
 	ctx, cancel := context.WithCancel(context.Background())
 
+	sched := scheduler.NewScheduler(db, &scheduler.SchedulerConfig{Repository: repository})
 	sched.StartContext(ctx)
 
 	osSignal := make(chan os.Signal, 1)
