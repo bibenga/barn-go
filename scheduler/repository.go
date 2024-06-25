@@ -53,16 +53,6 @@ func (c *ScheduleQueryConfig) init() {
 	}
 }
 
-type ScheduleQuery struct {
-	CreateTableQuery    string
-	SelectQuery         string
-	InsertQuery         string
-	DeleteQuery         string
-	DeleteAllQuery      string
-	UpdateQuery         string
-	UpdateIsActiveQuery string
-}
-
 type Schedule struct {
 	Id       int
 	Name     string
