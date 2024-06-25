@@ -122,7 +122,7 @@ func (s *SimpleScheduler) run(ctx context.Context) {
 			s.log.Info("terminate")
 			return
 		case <-timer.C:
-			limit := 50
+			limit := 10
 			i := 0
 			for i < 100 {
 				if processed, err := s.processTasks(limit); err != nil {
@@ -152,33 +152,37 @@ func (s *SimpleScheduler) processTasks(limit int) (int, error) {
 		if err != nil {
 			return err
 		}
-		for _, schedule := range schedules {
+		s.log.Debug("the schedules is loaded", "count", len(schedules))
+		for _, dbSchedule := range schedules {
 			processed += 1
-			s.log.Debug("process schedule", "schedule", schedule)
-			if schedule.NextTs == nil && schedule.Cron == nil {
-				s.log.Info("schedule is not valid", "schedule", schedule.Id)
-				schedule.IsActive = false
-				if err := s.repository.Save(tx, schedule); err != nil {
+			s.log.Info("process the schedule", "schedule", dbSchedule)
+			if dbSchedule.NextTs == nil && dbSchedule.Cron == nil {
+				s.log.Debug("the schedule is not valid")
+				dbSchedule.IsActive = false
+				if err := s.repository.Save(tx, dbSchedule); err != nil {
 					return err
 				}
+				continue
 			}
-			if err := s.handler(tx, schedule.Name, *schedule.NextTs, schedule.Message); err != nil {
-				return err
+			if err := s.handler(tx, dbSchedule.Name, *dbSchedule.NextTs, dbSchedule.Message); err != nil {
+				s.log.Error("the schedule processed with error", "error", err)
 			}
-			if schedule.Cron == nil {
-				schedule.IsActive = false
-				schedule.LastTs = schedule.NextTs
+			if dbSchedule.Cron == nil {
+				s.log.Info("the schedule is one shot")
+				dbSchedule.IsActive = false
+				dbSchedule.LastTs = dbSchedule.NextTs
 			} else {
-				if nextTs, err := gronx.NextTick(*schedule.Cron, false); err != nil {
-					s.log.Info("invalid cron expression", "schedule", schedule.Id, "error", err)
-					schedule.IsActive = false
-					schedule.LastTs = schedule.NextTs
+				if nextTs, err := gronx.NextTick(*dbSchedule.Cron, false); err != nil {
+					s.log.Info("the schedule has an invalid cron expression", "error", err)
+					dbSchedule.IsActive = false
+					dbSchedule.LastTs = dbSchedule.NextTs
 				} else {
-					schedule.LastTs = schedule.NextTs
-					schedule.NextTs = &nextTs
+					s.log.Info("the schedule is planned", "time", nextTs)
+					dbSchedule.LastTs = dbSchedule.NextTs
+					dbSchedule.NextTs = &nextTs
 				}
 			}
-			if err := s.repository.Save(tx, schedule); err != nil {
+			if err := s.repository.Save(tx, dbSchedule); err != nil {
 				return err
 			}
 		}

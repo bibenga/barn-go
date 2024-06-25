@@ -78,12 +78,7 @@ func NewLockWithConfig(db *sql.DB, config *LockerConfig) *Locker {
 		config.Hearbeat = config.Ttl / 3
 	}
 	if config.Log == nil {
-		config.Log = slog.Default().With(
-			"lock", slog.GroupValue(
-				slog.String("lock", config.LockName),
-				slog.String("name", config.Name),
-			),
-		)
+		config.Log = slog.Default()
 	}
 
 	lock := &Locker{
@@ -112,16 +107,16 @@ func (l *Locker) LockName() string {
 	return l.lockName
 }
 
-func (l *Locker) IsLocked() bool {
-	return l.locked
-}
-
 func (l *Locker) Ttl() time.Duration {
 	return l.ttl
 }
 
 func (l *Locker) Hearbeat() time.Duration {
 	return l.hearbeat
+}
+
+func (l *Locker) IsLocked() bool {
+	return l.locked
 }
 
 func (l *Locker) LockedAt() *time.Time {
@@ -131,15 +126,15 @@ func (l *Locker) LockedAt() *time.Time {
 // Try to acquire the lock
 func (l *Locker) TryLock() (bool, error) {
 	if l.locked {
-		return false, errors.New("the lock is locked")
+		return false, errors.New("codebug: the lock is locked")
 	}
-	l.log.Info("TryLock")
+	l.log.Debug("TryLock")
 	err := barngo.RunInTransaction(l.db, func(tx *sql.Tx) error {
 		lock, err := l.repository.FindOne(tx, l.lockName)
 		if err != nil {
 			return err
 		}
-		l.log.Info("loaded", "lock", lock)
+		l.log.Info("the lock is loaded", "lock", lock)
 		if lock == nil {
 			if err := l.repository.Create(tx, l.lockName); err != nil {
 				return err
@@ -154,7 +149,7 @@ func (l *Locker) TryLock() (bool, error) {
 		if lock.LockedAt == nil || lock.LockedAt.Before(rotten) {
 			lock.LockedAt = &now
 			lock.Owner = &l.name
-			l.log.Info("locked", "lock", lock)
+			l.log.Info("the lock is acquired", "lock", lock)
 			if err = l.repository.Save(tx, lock); err != nil {
 				return err
 			}
@@ -174,9 +169,9 @@ func (l *Locker) Lock(interval time.Duration) (bool, error) {
 // Acquire the lock
 func (l *Locker) LockContext(ctx context.Context, interval time.Duration) (bool, error) {
 	if l.locked {
-		return false, errors.New("the lock is locked")
+		return false, errors.New("codebug: the lock is locked")
 	}
-	l.log.Info("lock")
+	l.log.Debug("LockContext", "interval", interval)
 	if locked, err := l.TryLock(); err != nil {
 		return false, err
 	} else {
@@ -204,9 +199,9 @@ func (l *Locker) LockContext(ctx context.Context, interval time.Duration) (bool,
 // Update the acquired lock data
 func (l *Locker) Confirm() (bool, error) {
 	if !l.locked {
-		return false, errors.New("the lock is not locked")
+		return false, errors.New("codebug: the lock is not locked")
 	}
-	l.log.Info("confirm")
+	l.log.Debug("Confirm")
 	err := barngo.RunInTransaction(l.db, func(tx *sql.Tx) error {
 		lock, err := l.repository.FindOne(tx, l.lockName)
 		if err != nil {
@@ -215,18 +210,18 @@ func (l *Locker) Confirm() (bool, error) {
 		if lock == nil {
 			return sql.ErrNoRows
 		}
-		l.log.Info("loaded", "lock", lock)
+		l.log.Info("the lock is loaded", "lock", lock)
 		now := time.Now().UTC()
 		rotten := now.Add(-l.ttl)
 		if lock.LockedAt != nil && lock.LockedAt.After(rotten) && lock.Owner != nil && *lock.Owner == l.name {
 			lock.LockedAt = &now
-			l.log.Info("confirmed", "lock", lock)
+			l.log.Info("the lock is confirmed", "lock", lock)
 			if err = l.repository.Save(tx, lock); err != nil {
 				return err
 			}
-			l.locked = true
 			l.lockedAt = lock.LockedAt
 		} else {
+			l.log.Warn("the lock was recaptured by someone")
 			l.locked = false
 			l.lockedAt = nil
 		}
@@ -238,7 +233,7 @@ func (l *Locker) Confirm() (bool, error) {
 // Release lock
 func (l *Locker) Unlock() (bool, error) {
 	if !l.locked {
-		return false, errors.New("the lock is not locked")
+		return false, errors.New("codebug: the lock is not locked")
 	}
 	unlocked := false
 	err := barngo.RunInTransaction(l.db, func(tx *sql.Tx) error {
@@ -249,19 +244,19 @@ func (l *Locker) Unlock() (bool, error) {
 		if lock == nil {
 			return sql.ErrNoRows
 		}
-		l.log.Info("loaded", "lock", lock)
+		l.log.Info("the lock is loaded", "lock", lock)
 		now := time.Now().UTC()
 		rotten := now.Add(-l.ttl)
 		if lock.LockedAt != nil && lock.LockedAt.After(rotten) && lock.Owner != nil && *lock.Owner == l.name {
 			lock.LockedAt = nil
 			lock.Owner = nil
-			l.log.Info("unloked", "lock", lock)
+			l.log.Info("the lock is released", "lock", lock)
 			if err = l.repository.Save(tx, lock); err != nil {
 				return err
 			}
 			unlocked = true
 		} else {
-			l.log.Info("unlok failed", "lock", lock)
+			l.log.Warn("the lock was recaptured by someone")
 		}
 		l.locked = false
 		l.lockedAt = nil

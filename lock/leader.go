@@ -149,12 +149,10 @@ func (l *LeaderElector) hearbeat() error {
 
 func (l *LeaderElector) close() error {
 	if l.lock.IsLocked() {
-		if unlocked, err := l.lock.Unlock(); err != nil {
+		if _, err := l.lock.Unlock(); err != nil {
 			return err
 		} else {
-			if unlocked {
-				return l.onUnelected()
-			}
+			return l.onUnelected()
 		}
 	}
 	return nil
