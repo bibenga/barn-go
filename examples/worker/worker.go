@@ -45,11 +45,11 @@ func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	sched := queue.NewWorker(db, &queue.WorkerConfig{
+	worker := queue.NewWorker(db, &queue.WorkerConfig{
 		Repository: repository,
 		Cron:       "*/5 * * * * *",
 	})
-	sched.StartContext(ctx)
+	worker.StartContext(ctx)
 
 	osSignal := make(chan os.Signal, 1)
 	signal.Notify(osSignal, os.Interrupt)
@@ -58,5 +58,5 @@ func main() {
 
 	cancel()
 
-	sched.Stop()
+	worker.Stop()
 }
