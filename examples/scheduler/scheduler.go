@@ -49,8 +49,8 @@ func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	sched := scheduler.NewScheduler(db, &scheduler.SchedulerConfig{Repository: repository})
-	sched.StartContext(ctx)
+	scheduler := scheduler.NewScheduler(db, &scheduler.SchedulerConfig{Repository: repository})
+	scheduler.StartContext(ctx)
 
 	osSignal := make(chan os.Signal, 1)
 	signal.Notify(osSignal, os.Interrupt)
@@ -59,5 +59,5 @@ func main() {
 
 	cancel()
 
-	sched.Stop()
+	scheduler.Stop()
 }
