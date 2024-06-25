@@ -90,12 +90,8 @@ func (r *PostgresSchedulerRepository) FindAllActive(tx *sql.Tx) ([]*Schedule, er
 	return schedules, nil
 }
 
-func (r *PostgresSchedulerRepository) FindActiveAndExpired(tx *sql.Tx, moment *time.Time, limit int) ([]*Schedule, error) {
+func (r *PostgresSchedulerRepository) FindAllActiveToProcess(tx *sql.Tx, moment time.Time) ([]*Schedule, error) {
 	c := r.Config
-	if moment == nil {
-		m := time.Now().UTC()
-		moment = &m
-	}
 	stmt, err := tx.Prepare(
 		fmt.Sprintf(
 			`select %s, %s, %s, %s, %s, %s, %s 
@@ -115,7 +111,7 @@ func (r *PostgresSchedulerRepository) FindActiveAndExpired(tx *sql.Tx, moment *t
 	}
 	defer stmt.Close()
 
-	rows, err := stmt.Query(*moment, limit)
+	rows, err := stmt.Query(moment)
 	if err != nil {
 		return nil, err
 	}

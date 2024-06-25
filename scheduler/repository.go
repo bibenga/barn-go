@@ -98,7 +98,7 @@ func (e Schedule) LogValue() slog.Value {
 
 type SchedulerRepository interface {
 	FindAllActive(tx *sql.Tx) ([]*Schedule, error)
-	FindActiveAndExpired(tx *sql.Tx, moment *time.Time, limit int) ([]*Schedule, error)
+	FindAllActiveToProcess(tx *sql.Tx, moment time.Time) ([]*Schedule, error)
 	FindOne(tx *sql.Tx, pk int) (*Schedule, error)
 	Create(tx *sql.Tx, s *Schedule) error
 	Save(tx *sql.Tx, s *Schedule) error

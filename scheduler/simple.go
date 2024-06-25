@@ -139,7 +139,7 @@ func (s *SimpleScheduler) processTasks() error {
 	s.log.Info("process")
 
 	err := barngo.RunInTransaction(s.db, func(tx *sql.Tx) error {
-		schedules, err := s.repository.FindActiveAndExpired(tx, nil, 10000)
+		schedules, err := s.repository.FindAllActiveToProcess(tx, time.Now().UTC())
 		if err != nil {
 			return err
 		}
