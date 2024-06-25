@@ -10,7 +10,7 @@ type PostgresSchedulerRepository struct {
 	Config *ScheduleQueryConfig
 }
 
-func NewPgSchedulerRepository(conig *ScheduleQueryConfig) SchedulerRepository {
+func NewPostgresSchedulerRepository(conig *ScheduleQueryConfig) SchedulerRepository {
 	conig.init()
 	return &PostgresSchedulerRepository{
 		Config: conig,
@@ -18,7 +18,7 @@ func NewPgSchedulerRepository(conig *ScheduleQueryConfig) SchedulerRepository {
 }
 
 func NewDefaultPostgresSchedulerRepository() SchedulerRepository {
-	return NewPgSchedulerRepository(&ScheduleQueryConfig{})
+	return NewPostgresSchedulerRepository(&ScheduleQueryConfig{})
 }
 
 func (r *PostgresSchedulerRepository) CreateTable(tx *sql.Tx) error {
