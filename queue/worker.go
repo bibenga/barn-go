@@ -125,13 +125,15 @@ func (s *Worker) run(ctx context.Context) {
 			if err := s.process(); err != nil {
 				panic(err)
 			}
+			if err := s.deleteOld(); err != nil {
+				panic(err)
+			}
 		}
 	}
 }
 
 func (s *Worker) process() error {
 	s.log.Debug("process")
-
 	for {
 		err := barngo.RunInTransaction(s.db, func(tx *sql.Tx) error {
 			message, err := s.repository.FindNext(tx)
@@ -174,6 +176,16 @@ func (s *Worker) process() error {
 			return err
 		}
 	}
+}
+
+func (s *Worker) deleteOld() error {
+	s.log.Debug("deleteOld")
+	return barngo.RunInTransaction(s.db, func(tx *sql.Tx) error {
+		m := time.Now().UTC().Add(-30 * 24 * time.Hour)
+		deleted, err := s.repository.DeleteProcessed(tx, m)
+		s.log.Debug("the old messages is deleted", "count", deleted)
+		return err
+	})
 }
 
 func dummyMessageHandler(tx *sql.Tx, message *Message) error {
