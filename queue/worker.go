@@ -83,10 +83,6 @@ func (s *Worker) StartContext(ctx context.Context) {
 }
 
 func (s *Worker) Stop() {
-	if !s.running.Load() {
-		panic(errors.New("is not running"))
-	}
-
 	s.log.Debug("Stopping")
 	s.cancel()
 	s.stoped.Wait()

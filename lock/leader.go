@@ -62,10 +62,6 @@ func (l *LeaderElector) StartContext(ctx context.Context) {
 }
 
 func (l *LeaderElector) Stop() {
-	if !l.running.Load() {
-		panic(errors.New("is not running"))
-	}
-
 	l.log.Debug("Stopping")
 	l.cancel()
 	l.stoped.Wait()

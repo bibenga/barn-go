@@ -92,10 +92,6 @@ func (s *Scheduler) StartContext(ctx context.Context) {
 }
 
 func (s *Scheduler) Stop() {
-	if !s.running.Load() {
-		panic(errors.New("is not running"))
-	}
-
 	s.log.Debug("Stopping")
 	s.cancel()
 	s.stoped.Wait()

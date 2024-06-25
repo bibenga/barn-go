@@ -11,6 +11,7 @@ import (
 	barngo "github.com/bibenga/barn-go"
 	"github.com/bibenga/barn-go/examples"
 	"github.com/bibenga/barn-go/lock"
+	"github.com/bibenga/barn-go/queue"
 	"github.com/bibenga/barn-go/scheduler"
 )
 
@@ -22,6 +23,7 @@ func main() {
 
 	lockRepository := lock.NewDefaultPostgresLockRepository()
 	schedulerRepository := scheduler.NewDefaultPostgresSchedulerRepository()
+	queueRepository := queue.NewDefaultPostgresMessageRepository()
 
 	err := barngo.RunInTransaction(db, func(tx *sql.Tx) error {
 		pgLockRepository := lockRepository.(*lock.PostgresLockRepository)
@@ -49,6 +51,11 @@ func main() {
 		// 	return err
 		// }
 
+		pgQueueRepository := queueRepository.(*queue.PostgresMessageRepository)
+		if err := pgQueueRepository.CreateTable(tx); err != nil {
+			return err
+		}
+
 		return nil
 	})
 	if err != nil {
@@ -57,8 +64,14 @@ func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	sched := scheduler.NewScheduler(db, &scheduler.SchedulerConfig{
+	scheduler := scheduler.NewScheduler(db, &scheduler.SchedulerConfig{
 		Repository: schedulerRepository,
+		Handler: func(tx *sql.Tx, name string, moment time.Time, message *string) error {
+			return queueRepository.Create(tx, &queue.Message{
+				CreatedTs: moment,
+				Payload:   *message,
+			})
+		},
 	})
 
 	leaderLock := lock.NewLockWithConfig(db, &lock.LockerConfig{
@@ -70,15 +83,21 @@ func main() {
 		Lock: leaderLock,
 		Handler: func(leader bool) error {
 			if leader {
-				sched.StartContext(ctx)
+				scheduler.StartContext(ctx)
 			} else {
-				sched.Stop()
+				scheduler.Stop()
 			}
 			return nil
 		},
 	})
 
 	leader.StartContext(ctx)
+
+	worker := queue.NewWorker(db, &queue.WorkerConfig{
+		Repository: queueRepository,
+		Cron:       "*/20 * * * * *",
+	})
+	worker.StartContext(ctx)
 
 	osSignal := make(chan os.Signal, 1)
 	signal.Notify(osSignal, os.Interrupt)
@@ -87,4 +106,8 @@ func main() {
 
 	cancel()
 	time.Sleep(1 * time.Second)
+
+	leader.Stop()
+	scheduler.Stop()
+	worker.Stop()
 }
