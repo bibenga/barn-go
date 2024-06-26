@@ -95,7 +95,7 @@ func (r *PostgresMessageRepository) Create(tx *sql.Tx, m *Message) error {
 	stmt, err := tx.Prepare(
 		fmt.Sprintf(
 			`insert into %s(%s, %s, %s, %s, %s, %s) 
-			values ($1, $2, $3, $4, $5, $6, $7) 
+			values ($1, $2, $3, $4, $5, $6) 
 			returning %s`,
 			c.TableName,
 			c.CreatedTsField, c.PayloadField, c.IsProcessedField, c.ProcessedTsField, c.IsSuccessField, c.ErrorField,

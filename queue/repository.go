@@ -56,7 +56,7 @@ func (c *MessageQueryConfig) init() {
 type Message struct {
 	Id          int
 	Created     time.Time
-	Payload     string
+	Payload     interface{}
 	IsProcessed bool
 	Processed   *time.Time
 	IsSuccess   *bool
@@ -67,7 +67,7 @@ func (e Message) LogValue() slog.Value {
 	var args []slog.Attr
 	args = append(args, slog.Int("Id", e.Id))
 	args = append(args, slog.Time("CreatedTs", e.Created))
-	args = append(args, slog.String("Payload", e.Payload))
+	args = append(args, slog.Any("Payload", e.Payload))
 	args = append(args, slog.Bool("IsProcessed", e.IsProcessed))
 	if e.Processed == nil {
 		args = append(args, slog.Any("ProcessedTs", nil))

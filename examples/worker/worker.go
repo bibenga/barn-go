@@ -31,10 +31,18 @@ func main() {
 		}
 
 		message1 := queue.Message{
-			Payload: "{}",
+			Payload: map[string]any{"str": "str", "int": 12},
 			Created: time.Now().UTC(),
 		}
 		if err := r.Create(tx, &message1); err != nil {
+			return err
+		}
+
+		message2 := queue.Message{
+			Payload: nil,
+			Created: time.Now().UTC(),
+		}
+		if err := r.Create(tx, &message2); err != nil {
 			return err
 		}
 		return nil
