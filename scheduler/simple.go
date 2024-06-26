@@ -152,7 +152,7 @@ func (s *SimpleScheduler) processTasks() error {
 				}
 				continue
 			}
-			if err := s.handler(tx, dbSchedule.Name, *dbSchedule.NextRun, dbSchedule.Message); err != nil {
+			if err := s.handler(tx, dbSchedule); err != nil {
 				s.log.Error("the schedule processed with error", "error", err)
 			}
 			if dbSchedule.Cron == nil {

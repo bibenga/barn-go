@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -66,10 +67,26 @@ func main() {
 
 	scheduler := scheduler.NewScheduler(db, &scheduler.SchedulerConfig{
 		Repository: schedulerRepository,
-		Handler: func(tx *sql.Tx, name string, moment time.Time, message *string) error {
+		Handler: func(tx *sql.Tx, s *scheduler.Schedule) error {
+			var payload map[string]interface{}
+			if s.Message != nil {
+				if err := json.Unmarshal([]byte(*s.Message), &payload); err != nil {
+					return err
+				}
+			} else {
+				payload = make(map[string]interface{})
+			}
+			payload["_meta"] = map[string]interface{}{
+				"schedule": s.Name,
+				"moment":   s.NextRun,
+			}
+			spayload, err := json.Marshal(payload)
+			if err != nil {
+				return err
+			}
 			return queueRepository.Create(tx, &queue.Message{
-				Created: moment,
-				Payload: *message,
+				Created: *s.NextRun,
+				Payload: string(spayload),
 			})
 		},
 	})
@@ -95,7 +112,7 @@ func main() {
 
 	worker := queue.NewWorker(db, &queue.WorkerConfig{
 		Repository: queueRepository,
-		Cron:       "*/20 * * * * *",
+		Cron:       "*/5 * * * * *",
 	})
 	worker.StartContext(ctx)
 

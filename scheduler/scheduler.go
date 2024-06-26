@@ -15,7 +15,7 @@ import (
 	barngo "github.com/bibenga/barn-go"
 )
 
-type SchedulerHandler func(tx *sql.Tx, name string, moment time.Time, message *string) error
+type SchedulerHandler func(tx *sql.Tx, schedule *Schedule) error
 
 type SchedulerConfig struct {
 	Log        *slog.Logger
@@ -250,7 +250,7 @@ func (s *Scheduler) processTask(schedule *Schedule) error {
 			return nil
 		}
 		if dbSchedule.NextRun.Equal(*schedule.NextRun) || dbSchedule.NextRun.Before(*schedule.NextRun) {
-			if err := s.handler(tx, schedule.Name, *schedule.NextRun, schedule.Message); err != nil {
+			if err := s.handler(tx, dbSchedule); err != nil {
 				s.log.Error("the schedule processed with error", "error", err)
 			}
 			if dbSchedule.Cron == nil {
@@ -279,18 +279,18 @@ func (s *Scheduler) processTask(schedule *Schedule) error {
 	})
 }
 
-func dummySchedulerHandler(tx *sql.Tx, name string, moment time.Time, message *string) error {
+func dummySchedulerHandler(tx *sql.Tx, s *Schedule) error {
 	var payload map[string]interface{}
-	if message != nil {
-		if err := json.Unmarshal([]byte(*message), &payload); err != nil {
+	if s.Message != nil {
+		if err := json.Unmarshal([]byte(*s.Message), &payload); err != nil {
 			return err
 		}
 	} else {
 		payload = make(map[string]interface{})
 	}
 	meta := make(map[string]interface{})
-	meta["name"] = name
-	meta["moment"] = moment
+	meta["name"] = s.Name
+	meta["moment"] = s.NextRun
 	payload["_meta"] = meta
 	if encodedPayload, err := json.Marshal(payload); err != nil {
 		return err
