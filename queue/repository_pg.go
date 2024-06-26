@@ -48,6 +48,15 @@ func (r *PostgresMessageRepository) CreateTable(tx *sql.Tx) error {
 			c.IdField,
 		),
 	)
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(
+		fmt.Sprintf(
+			`create index if not exists idx_%s_%s on %s (%s)`,
+			c.TableName, c.CreatedTsField, c.TableName, c.CreatedTsField,
+		),
+	)
 	return err
 }
 

@@ -15,7 +15,7 @@ import (
 
 type SimpleSchedulerConfig struct {
 	Log        *slog.Logger
-	Repository SchedulerRepository
+	Repository SimpleSchedulerRepository
 	Cron       string
 	Handler    SchedulerHandler
 }
@@ -24,7 +24,7 @@ type SimpleScheduler struct {
 	log        *slog.Logger
 	handler    SchedulerHandler
 	db         *sql.DB
-	repository SchedulerRepository
+	repository SimpleSchedulerRepository
 	running    atomic.Bool
 	cancel     context.CancelFunc
 	stoped     sync.WaitGroup
@@ -40,9 +40,7 @@ func NewSimpleScheduler(db *sql.DB, config *SimpleSchedulerConfig) *SimpleSchedu
 		panic(errors.New("config is nil"))
 	}
 	if config.Repository == nil {
-		config.Repository = NewDefaultPostgresSchedulerRepository()
-		// or just panic?
-		// panic(errors.New("repository is nil"))
+		config.Repository = NewDefaultPostgresSimpleSchedulerRepository()
 	}
 	if config.Cron == "" {
 		config.Cron = "* * * * *"
@@ -139,7 +137,7 @@ func (s *SimpleScheduler) processTasks() error {
 	s.log.Info("process")
 
 	err := barngo.RunInTransaction(s.db, func(tx *sql.Tx) error {
-		schedules, err := s.repository.FindAllActiveToProcess(tx, time.Now().UTC())
+		schedules, err := s.repository.FindAllActiveAndUnprocessed(tx, time.Now().UTC())
 		if err != nil {
 			return err
 		}

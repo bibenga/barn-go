@@ -21,6 +21,17 @@ func NewDefaultPostgresSchedulerRepository() SchedulerRepository {
 	return NewPostgresSchedulerRepository(&ScheduleQueryConfig{})
 }
 
+func NewPostgresSimpleSchedulerRepository(conig *ScheduleQueryConfig) SimpleSchedulerRepository {
+	conig.init()
+	return &PostgresSchedulerRepository{
+		Config: conig,
+	}
+}
+
+func NewDefaultPostgresSimpleSchedulerRepository() SimpleSchedulerRepository {
+	return NewPostgresSimpleSchedulerRepository(&ScheduleQueryConfig{})
+}
+
 func (r *PostgresSchedulerRepository) CreateTable(tx *sql.Tx) error {
 	c := r.Config
 	_, err := tx.Exec(
@@ -90,7 +101,7 @@ func (r *PostgresSchedulerRepository) FindAllActive(tx *sql.Tx) ([]*Schedule, er
 	return schedules, nil
 }
 
-func (r *PostgresSchedulerRepository) FindAllActiveToProcess(tx *sql.Tx, moment time.Time) ([]*Schedule, error) {
+func (r *PostgresSchedulerRepository) FindAllActiveAndUnprocessed(tx *sql.Tx, moment time.Time) ([]*Schedule, error) {
 	c := r.Config
 	stmt, err := tx.Prepare(
 		fmt.Sprintf(
