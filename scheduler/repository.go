@@ -9,10 +9,10 @@ import (
 const DefaultTableName = "barn_schedule"
 const DefaultIdField = "id"
 const DefaultNameField = "name"
-const DefaultIsActiveField = "is_active"
+const DefaultIsActiveField = "is_active_flg"
 const DefaultCronField = "cron"
-const DefaultNextTsField = "next_ts"
-const DefaultLastTsField = "last_ts"
+const DefaultNextRunField = "next_run_ts"
+const DefaultLastRunField = "last_run_ts"
 const DefaultMessageField = "message"
 
 type ScheduleQueryConfig struct {
@@ -21,8 +21,8 @@ type ScheduleQueryConfig struct {
 	NameField     string
 	IsActiveField string
 	CronField     string
-	NextTsField   string
-	LastTsField   string
+	NextRunField  string
+	LastRunField  string
 	MessageField  string
 }
 
@@ -42,11 +42,11 @@ func (c *ScheduleQueryConfig) init() {
 	if c.CronField == "" {
 		c.CronField = DefaultCronField
 	}
-	if c.NextTsField == "" {
-		c.NextTsField = DefaultNextTsField
+	if c.NextRunField == "" {
+		c.NextRunField = DefaultNextRunField
 	}
-	if c.LastTsField == "" {
-		c.LastTsField = DefaultLastTsField
+	if c.LastRunField == "" {
+		c.LastRunField = DefaultLastRunField
 	}
 	if c.MessageField == "" {
 		c.MessageField = DefaultMessageField
@@ -58,8 +58,8 @@ type Schedule struct {
 	Name     string
 	IsActive bool
 	Cron     *string
-	NextTs   *time.Time
-	LastTs   *time.Time
+	NextRun  *time.Time
+	LastRun  *time.Time
 	Message  *string
 }
 
@@ -73,10 +73,15 @@ func (e Schedule) LogValue() slog.Value {
 	} else {
 		args = append(args, slog.String("Cron", *e.Cron))
 	}
-	if e.NextTs == nil {
-		args = append(args, slog.Any("NextTs", nil))
+	if e.NextRun == nil {
+		args = append(args, slog.Any("NextRun", nil))
 	} else {
-		args = append(args, slog.Time("NextTs", *e.NextTs))
+		args = append(args, slog.Time("NextRun", *e.NextRun))
+	}
+	if e.LastRun == nil {
+		args = append(args, slog.Any("LastRun", nil))
+	} else {
+		args = append(args, slog.Time("LastRun", *e.LastRun))
 	}
 	if e.Message == nil {
 		args = append(args, slog.Any("Message", nil))

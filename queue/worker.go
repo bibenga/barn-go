@@ -148,7 +148,7 @@ func (s *Worker) process() error {
 				now := time.Now().UTC()
 				success := false
 				message.IsProcessed = true
-				message.ProcessedTs = &now
+				message.Processed = &now
 				message.IsSuccess = &success
 				errorMessage := err.Error()
 				message.Error = &errorMessage
@@ -156,7 +156,7 @@ func (s *Worker) process() error {
 				now := time.Now().UTC()
 				success := true
 				message.IsProcessed = true
-				message.ProcessedTs = &now
+				message.Processed = &now
 				message.IsSuccess = &success
 			}
 			s.log.Debug("save message", "message", message)

@@ -8,7 +8,7 @@ import (
 
 const DefaultTableName = "barn_lock"
 const DefaultNameField = "name"
-const DefaultLockedAtField = "locked_at"
+const DefaultLockedAtField = "locked_at_ts"
 const DefaultOwnerField = "owner"
 
 type LockQueryConfig struct {

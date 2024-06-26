@@ -118,8 +118,8 @@ func (s *Scheduler) run(ctx context.Context) {
 
 	for {
 		sched := s.getNext()
-		d := time.Until(*sched.NextTs)
-		s.log.Debug("next fire time", "time", *sched.NextTs, "duration", d)
+		d := time.Until(*sched.NextRun)
+		s.log.Debug("next fire time", "time", *sched.NextRun, "duration", d)
 		timer := time.NewTimer(d)
 		defer timer.Stop()
 		select {
@@ -145,11 +145,11 @@ func (s *Scheduler) run(ctx context.Context) {
 func (s *Scheduler) reload() error {
 	s.log.Debug("reload schdules")
 
-	if s.reloadSchedule.NextTs == nil {
+	if s.reloadSchedule.NextRun == nil {
 		if nextTs, err := gronx.NextTick(*s.reloadSchedule.Cron, false); err != nil {
 			return err
 		} else {
-			s.reloadSchedule.NextTs = &nextTs
+			s.reloadSchedule.NextRun = &nextTs
 		}
 	}
 
@@ -164,14 +164,14 @@ func (s *Scheduler) reload() error {
 			if !dbSchedule.IsActive {
 				s.log.Debug("the schedule is not active", "schedule", dbSchedule)
 				continue
-			} else if dbSchedule.NextTs == nil && dbSchedule.Cron == nil {
+			} else if dbSchedule.NextRun == nil && dbSchedule.Cron == nil {
 				s.log.Debug("the schedule is not valid")
 				dbSchedule.IsActive = false
 				if err := s.repository.Save(tx, dbSchedule); err != nil {
 					return err
 				}
 				continue
-			} else if dbSchedule.NextTs == nil {
+			} else if dbSchedule.NextRun == nil {
 				if nextTs, err := gronx.NextTick(*dbSchedule.Cron, true); err != nil {
 					s.log.Info("the schedule has an invalid cron expression", "error", err)
 					dbSchedule.IsActive = false
@@ -179,8 +179,8 @@ func (s *Scheduler) reload() error {
 						return err
 					}
 				} else {
-					dbSchedule.NextTs = &nextTs
-					s.log.Debug("update next fire time", "NextTs", *dbSchedule.NextTs)
+					dbSchedule.NextRun = &nextTs
+					s.log.Debug("update next fire time", "NextTs", *dbSchedule.NextRun)
 					if err := s.repository.Save(tx, dbSchedule); err != nil {
 						return err
 					}
@@ -216,7 +216,7 @@ func (s *Scheduler) getNext() *Schedule {
 	// yes, we should use heap, but I'm lazy
 	var next *Schedule = &s.reloadSchedule
 	for _, s := range s.schedules {
-		if s.NextTs.Before(*next.NextTs) {
+		if s.NextRun.Before(*next.NextRun) {
 			next = s
 		}
 	}
@@ -240,7 +240,7 @@ func (s *Scheduler) processTask(schedule *Schedule) error {
 			return nil
 		}
 		s.log.Info("loaded state from db", "schedule", dbSchedule)
-		if dbSchedule.NextTs == nil && dbSchedule.Cron == nil {
+		if dbSchedule.NextRun == nil && dbSchedule.Cron == nil {
 			s.log.Info("the schedule is not valid", "schedule", schedule.Id)
 			dbSchedule.IsActive = false
 			if err := s.repository.Save(tx, dbSchedule); err != nil {
@@ -249,23 +249,23 @@ func (s *Scheduler) processTask(schedule *Schedule) error {
 			delete(s.schedules, schedule.Id)
 			return nil
 		}
-		if dbSchedule.NextTs.Equal(*schedule.NextTs) || dbSchedule.NextTs.Before(*schedule.NextTs) {
-			if err := s.handler(tx, schedule.Name, *schedule.NextTs, schedule.Message); err != nil {
+		if dbSchedule.NextRun.Equal(*schedule.NextRun) || dbSchedule.NextRun.Before(*schedule.NextRun) {
+			if err := s.handler(tx, schedule.Name, *schedule.NextRun, schedule.Message); err != nil {
 				s.log.Error("the schedule processed with error", "error", err)
 			}
 			if dbSchedule.Cron == nil {
 				s.log.Info("the schedule is one shot")
 				dbSchedule.IsActive = false
-				dbSchedule.LastTs = dbSchedule.NextTs
+				dbSchedule.LastRun = dbSchedule.NextRun
 			} else {
 				if nextTs, err := gronx.NextTick(*dbSchedule.Cron, false); err != nil {
 					s.log.Info("the schedule has an invalid cron expression", "error", err)
 					dbSchedule.IsActive = false
-					dbSchedule.LastTs = dbSchedule.NextTs
+					dbSchedule.LastRun = dbSchedule.NextRun
 				} else {
 					s.log.Info("the schedule is planned", "time", nextTs)
-					dbSchedule.LastTs = dbSchedule.NextTs
-					dbSchedule.NextTs = &nextTs
+					dbSchedule.LastRun = dbSchedule.NextRun
+					dbSchedule.NextRun = &nextTs
 				}
 			}
 			if err := s.repository.Save(tx, dbSchedule); err != nil {

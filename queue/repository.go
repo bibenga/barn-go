@@ -9,11 +9,11 @@ import (
 const DefaultTableName = "barn_message"
 const DefaultIdField = "id"
 const DefaultQueueField = "queue"
-const DefaultCreatedTsField = "created_ts"
+const DefaultCreatedField = "created_ts"
 const DefaultPayloadField = "payload"
-const DefaultIsProcessedField = "is_processed"
-const DefaultProcessedTsField = "processed_ts"
-const DefaultIsSuccessField = "is_success"
+const DefaultIsProcessedField = "is_processed_flg"
+const DefaultProcessedField = "processed_ts"
+const DefaultIsSuccessField = "is_success_flg"
 const DefaultErrorField = "error"
 
 type MessageQueryConfig struct {
@@ -39,7 +39,7 @@ func (c *MessageQueryConfig) init() {
 		c.QueueField = DefaultQueueField
 	}
 	if c.CreatedTsField == "" {
-		c.CreatedTsField = DefaultCreatedTsField
+		c.CreatedTsField = DefaultCreatedField
 	}
 	if c.PayloadField == "" {
 		c.PayloadField = DefaultPayloadField
@@ -48,7 +48,7 @@ func (c *MessageQueryConfig) init() {
 		c.IsProcessedField = DefaultIsProcessedField
 	}
 	if c.ProcessedTsField == "" {
-		c.ProcessedTsField = DefaultProcessedTsField
+		c.ProcessedTsField = DefaultProcessedField
 	}
 	if c.IsSuccessField == "" {
 		c.IsSuccessField = DefaultIsSuccessField
@@ -61,10 +61,10 @@ func (c *MessageQueryConfig) init() {
 type Message struct {
 	Id          int
 	Queue       *string
-	CreatedTs   time.Time
+	Created     time.Time
 	Payload     string
 	IsProcessed bool
-	ProcessedTs *time.Time
+	Processed   *time.Time
 	IsSuccess   *bool
 	Error       *string
 }
@@ -77,13 +77,13 @@ func (e Message) LogValue() slog.Value {
 	} else {
 		args = append(args, slog.String("Queue", *e.Queue))
 	}
-	args = append(args, slog.Time("CreatedTs", e.CreatedTs))
+	args = append(args, slog.Time("CreatedTs", e.Created))
 	args = append(args, slog.String("Payload", e.Payload))
 	args = append(args, slog.Bool("IsProcessed", e.IsProcessed))
-	if e.ProcessedTs == nil {
+	if e.Processed == nil {
 		args = append(args, slog.Any("ProcessedTs", nil))
 	} else {
-		args = append(args, slog.Time("ProcessedTs", *e.ProcessedTs))
+		args = append(args, slog.Time("ProcessedTs", *e.Processed))
 	}
 	if e.IsSuccess == nil {
 		args = append(args, slog.Any("IsSuccess", nil))

@@ -31,8 +31,8 @@ func main() {
 		}
 
 		message1 := queue.Message{
-			Payload:   "{}",
-			CreatedTs: time.Now().UTC(),
+			Payload: "{}",
+			Created: time.Now().UTC(),
 		}
 		if err := r.Create(tx, &message1); err != nil {
 			return err

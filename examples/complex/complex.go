@@ -68,8 +68,8 @@ func main() {
 		Repository: schedulerRepository,
 		Handler: func(tx *sql.Tx, name string, moment time.Time, message *string) error {
 			return queueRepository.Create(tx, &queue.Message{
-				CreatedTs: moment,
-				Payload:   *message,
+				Created: moment,
+				Payload: *message,
 			})
 		},
 	})

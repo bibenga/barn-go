@@ -73,7 +73,7 @@ func (r *PostgresMessageRepository) FindNext(tx *sql.Tx) (*Message, error) {
 	defer stmt.Close()
 	var m Message
 	row := stmt.QueryRow()
-	if err := row.Scan(&m.Id, &m.Queue, &m.CreatedTs, &m.Payload, &m.IsProcessed, &m.ProcessedTs, &m.IsSuccess, &m.Error); err != nil {
+	if err := row.Scan(&m.Id, &m.Queue, &m.Created, &m.Payload, &m.IsProcessed, &m.Processed, &m.IsSuccess, &m.Error); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
 		} else {
@@ -100,7 +100,7 @@ func (r *PostgresMessageRepository) Create(tx *sql.Tx, m *Message) error {
 	}
 	defer stmt.Close()
 
-	err = stmt.QueryRow(&m.Queue, &m.CreatedTs, &m.Payload, &m.IsProcessed, &m.ProcessedTs, &m.IsSuccess, &m.Error).Scan(&m.Id)
+	err = stmt.QueryRow(&m.Queue, &m.Created, &m.Payload, &m.IsProcessed, &m.Processed, &m.IsSuccess, &m.Error).Scan(&m.Id)
 	return err
 }
 
@@ -115,7 +115,7 @@ func (r *PostgresMessageRepository) Save(tx *sql.Tx, m *Message) error {
 			c.IsProcessedField, c.ProcessedTsField, c.IsSuccessField, c.ErrorField,
 			c.IdField,
 		),
-		m.IsProcessed, m.ProcessedTs, m.IsSuccess, m.Error,
+		m.IsProcessed, m.Processed, m.IsSuccess, m.Error,
 		m.Id,
 	)
 	if err != nil {
