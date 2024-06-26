@@ -1,6 +1,6 @@
-CREATE TABLE IF NOT EXISTS barn_lock  (
-    name VARCHAR NOT NULL,
-    locked_at TIMESTAMP WITH TIME ZONE,
-    owner VARCHAR,
-    PRIMARY KEY (%s)
+create table if not exists barn_lock  (
+    name varchar not null,
+    locked_at_ts timestamp with time zone,
+    owner varchar,
+    primary key (name)
 );

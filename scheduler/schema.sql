@@ -1,11 +1,11 @@
-CREATE TABLE IF NOT EXISTS barn_schedule (
-    id SERIAL NOT NULL, 
-    name VARCHAR NOT NULL, 
-    is_active BOOLEAN DEFAULT TRUE NOT NULL, 
-    cron VARCHAR, 
-    next_ts TIMESTAMP WITH TIME ZONE, 
-    last_ts TIMESTAMP WITH TIME ZONE, 
-    message JSONB, 
-    PRIMARY KEY (id),
-    UNIQUE (name)
+create table if not exists barn_schedule (
+    id serial not null, 
+    name varchar not null, 
+    is_active_flg boolean default true not null, 
+    cron varchar, 
+    next_run_ts timestamp with time zone, 
+    last_run_ts timestamp with time zone, 
+    message jsonb, 
+    primary key (id),
+    unique (name)
 );
