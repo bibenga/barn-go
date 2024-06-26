@@ -8,7 +8,6 @@ import (
 
 const DefaultTableName = "barn_message"
 const DefaultIdField = "id"
-const DefaultQueueField = "queue"
 const DefaultCreatedField = "created_ts"
 const DefaultPayloadField = "payload"
 const DefaultIsProcessedField = "is_processed_flg"
@@ -19,7 +18,6 @@ const DefaultErrorField = "error"
 type MessageQueryConfig struct {
 	TableName        string
 	IdField          string
-	QueueField       string
 	CreatedTsField   string
 	PayloadField     string
 	IsProcessedField string
@@ -34,9 +32,6 @@ func (c *MessageQueryConfig) init() {
 	}
 	if c.IdField == "" {
 		c.IdField = DefaultIdField
-	}
-	if c.QueueField == "" {
-		c.QueueField = DefaultQueueField
 	}
 	if c.CreatedTsField == "" {
 		c.CreatedTsField = DefaultCreatedField
@@ -60,7 +55,6 @@ func (c *MessageQueryConfig) init() {
 
 type Message struct {
 	Id          int
-	Queue       *string
 	Created     time.Time
 	Payload     string
 	IsProcessed bool
@@ -72,11 +66,6 @@ type Message struct {
 func (e Message) LogValue() slog.Value {
 	var args []slog.Attr
 	args = append(args, slog.Int("Id", e.Id))
-	if e.Queue == nil {
-		args = append(args, slog.Any("Queue", nil))
-	} else {
-		args = append(args, slog.String("Queue", *e.Queue))
-	}
 	args = append(args, slog.Time("CreatedTs", e.Created))
 	args = append(args, slog.String("Payload", e.Payload))
 	args = append(args, slog.Bool("IsProcessed", e.IsProcessed))

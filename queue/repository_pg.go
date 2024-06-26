@@ -27,7 +27,6 @@ func (r *PostgresMessageRepository) CreateTable(tx *sql.Tx) error {
 		fmt.Sprintf(
 			`create table if not exists %s (
 				%s serial not null, 
-				%s varchar, 
 				%s timestamp with time zone not null, 
 				%s jsonb not null, 
 				%s boolean default false not null, 
@@ -38,7 +37,6 @@ func (r *PostgresMessageRepository) CreateTable(tx *sql.Tx) error {
 			)`,
 			c.TableName,
 			c.IdField,
-			c.QueueField,
 			c.CreatedTsField,
 			c.PayloadField,
 			c.IsProcessedField,
@@ -64,13 +62,13 @@ func (r *PostgresMessageRepository) FindNext(tx *sql.Tx) (*Message, error) {
 	c := r.Config
 	stmt, err := tx.Prepare(
 		fmt.Sprintf(
-			`select %s, %s, %s, %s, %s, %s, %s, %s
+			`select %s, %s, %s, %s, %s, %s, %s
 			from %s
 			where not %s
 			order by %s
 			limit 1
 			for update`,
-			c.IdField, c.QueueField, c.CreatedTsField, c.PayloadField, c.IsProcessedField, c.ProcessedTsField, c.IsSuccessField, c.ErrorField,
+			c.IdField, c.CreatedTsField, c.PayloadField, c.IsProcessedField, c.ProcessedTsField, c.IsSuccessField, c.ErrorField,
 			c.TableName,
 			c.IsProcessedField,
 			c.CreatedTsField,
@@ -82,7 +80,7 @@ func (r *PostgresMessageRepository) FindNext(tx *sql.Tx) (*Message, error) {
 	defer stmt.Close()
 	var m Message
 	row := stmt.QueryRow()
-	if err := row.Scan(&m.Id, &m.Queue, &m.Created, &m.Payload, &m.IsProcessed, &m.Processed, &m.IsSuccess, &m.Error); err != nil {
+	if err := row.Scan(&m.Id, &m.Created, &m.Payload, &m.IsProcessed, &m.Processed, &m.IsSuccess, &m.Error); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
 		} else {
@@ -96,11 +94,11 @@ func (r *PostgresMessageRepository) Create(tx *sql.Tx, m *Message) error {
 	c := r.Config
 	stmt, err := tx.Prepare(
 		fmt.Sprintf(
-			`insert into %s(%s, %s, %s, %s, %s, %s, %s) 
+			`insert into %s(%s, %s, %s, %s, %s, %s) 
 			values ($1, $2, $3, $4, $5, $6, $7) 
 			returning %s`,
 			c.TableName,
-			c.QueueField, c.CreatedTsField, c.PayloadField, c.IsProcessedField, c.ProcessedTsField, c.IsSuccessField, c.ErrorField,
+			c.CreatedTsField, c.PayloadField, c.IsProcessedField, c.ProcessedTsField, c.IsSuccessField, c.ErrorField,
 			c.IdField,
 		),
 	)
@@ -109,7 +107,7 @@ func (r *PostgresMessageRepository) Create(tx *sql.Tx, m *Message) error {
 	}
 	defer stmt.Close()
 
-	err = stmt.QueryRow(&m.Queue, &m.Created, &m.Payload, &m.IsProcessed, &m.Processed, &m.IsSuccess, &m.Error).Scan(&m.Id)
+	err = stmt.QueryRow(&m.Created, &m.Payload, &m.IsProcessed, &m.Processed, &m.IsSuccess, &m.Error).Scan(&m.Id)
 	return err
 }
 
