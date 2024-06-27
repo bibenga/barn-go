@@ -3,6 +3,7 @@ package queue
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -80,10 +81,11 @@ func (r *PostgresMessageRepository) CreateTable(tx *sql.Tx) error {
 	if err != nil {
 		return err
 	}
+
 	_, err = tx.Exec(
 		fmt.Sprintf(
 			`create index if not exists idx_%s_%s on %s (%s)`,
-			c.TableName, c.CreatedAtField, c.TableName, c.CreatedAtField,
+			strings.ReplaceAll(c.TableName, ".", "_"), c.CreatedAtField, c.TableName, c.CreatedAtField,
 		),
 	)
 	return err

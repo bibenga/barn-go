@@ -22,11 +22,28 @@ func main() {
 	db := examples.InitDb(false)
 	defer db.Close()
 
-	lockRepository := lock.NewPostgresLockRepository()
-	schedulerRepository := scheduler.NewPostgresSchedulerRepository()
-	queueRepository := queue.NewPostgresMessageRepository()
+	lockRepository := lock.NewPostgresLockRepository(
+		lock.LockQueryConfig{
+			TableName: "barn.lock",
+		},
+	)
+	schedulerRepository := scheduler.NewPostgresSchedulerRepository(
+		scheduler.ScheduleQueryConfig{
+			TableName: "barn.schedule",
+		},
+	)
+	queueRepository := queue.NewPostgresMessageRepository(
+		queue.MessageQueryConfig{
+			TableName: "barn.message",
+		},
+	)
 
 	err := barngo.RunInTransaction(db, func(tx *sql.Tx) error {
+		_, err := tx.Exec(`create schema if not exists barn`)
+		if err != nil {
+			return err
+		}
+
 		pgLockRepository := lockRepository.(*lock.PostgresLockRepository)
 		if err := pgLockRepository.CreateTable(tx); err != nil {
 			return err
