@@ -8,20 +8,20 @@ import (
 
 const DefaultTableName = "barn_message"
 const DefaultIdField = "id"
-const DefaultCreatedField = "created_ts"
+const DefaultCreatedAtField = "created_at"
 const DefaultPayloadField = "payload"
-const DefaultIsProcessedField = "is_processed_flg"
-const DefaultProcessedField = "processed_ts"
+const DefaultIsProcessedField = "is_processed"
+const DefaultProcessedAtField = "processed_at"
 const DefaultIsSuccessField = "is_success_flg"
 const DefaultErrorField = "error"
 
 type MessageQueryConfig struct {
 	TableName        string
 	IdField          string
-	CreatedTsField   string
+	CreatedAtField   string
 	PayloadField     string
 	IsProcessedField string
-	ProcessedTsField string
+	ProcessedAtField string
 	IsSuccessField   string
 	ErrorField       string
 }
@@ -33,8 +33,8 @@ func (c *MessageQueryConfig) init() {
 	if c.IdField == "" {
 		c.IdField = DefaultIdField
 	}
-	if c.CreatedTsField == "" {
-		c.CreatedTsField = DefaultCreatedField
+	if c.CreatedAtField == "" {
+		c.CreatedAtField = DefaultCreatedAtField
 	}
 	if c.PayloadField == "" {
 		c.PayloadField = DefaultPayloadField
@@ -42,8 +42,8 @@ func (c *MessageQueryConfig) init() {
 	if c.IsProcessedField == "" {
 		c.IsProcessedField = DefaultIsProcessedField
 	}
-	if c.ProcessedTsField == "" {
-		c.ProcessedTsField = DefaultProcessedField
+	if c.ProcessedAtField == "" {
+		c.ProcessedAtField = DefaultProcessedAtField
 	}
 	if c.IsSuccessField == "" {
 		c.IsSuccessField = DefaultIsSuccessField
@@ -55,10 +55,10 @@ func (c *MessageQueryConfig) init() {
 
 type Message struct {
 	Id          int
-	Created     time.Time
+	CreatedAt   time.Time
 	Payload     string
 	IsProcessed bool
-	Processed   *time.Time
+	ProcessedAt *time.Time
 	IsSuccess   *bool
 	Error       *string
 }
@@ -66,13 +66,13 @@ type Message struct {
 func (e Message) LogValue() slog.Value {
 	var args []slog.Attr
 	args = append(args, slog.Int("Id", e.Id))
-	args = append(args, slog.Time("CreatedTs", e.Created))
+	args = append(args, slog.Time("CreatedAt", e.CreatedAt))
 	args = append(args, slog.String("Payload", e.Payload))
 	args = append(args, slog.Bool("IsProcessed", e.IsProcessed))
-	if e.Processed == nil {
-		args = append(args, slog.Any("ProcessedTs", nil))
+	if e.ProcessedAt == nil {
+		args = append(args, slog.Any("ProcessedAt", nil))
 	} else {
-		args = append(args, slog.Time("ProcessedTs", *e.Processed))
+		args = append(args, slog.Time("ProcessedAt", *e.ProcessedAt))
 	}
 	if e.IsSuccess == nil {
 		args = append(args, slog.Any("IsSuccess", nil))

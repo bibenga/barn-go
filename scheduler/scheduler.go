@@ -118,8 +118,8 @@ func (s *Scheduler) run(ctx context.Context) {
 
 	for {
 		sched := s.getNext()
-		d := time.Until(*sched.NextRun)
-		s.log.Debug("next fire time", "time", *sched.NextRun, "duration", d)
+		d := time.Until(*sched.NextRunAt)
+		s.log.Debug("next fire time", "time", *sched.NextRunAt, "duration", d)
 		timer := time.NewTimer(d)
 		defer timer.Stop()
 		select {
@@ -145,11 +145,11 @@ func (s *Scheduler) run(ctx context.Context) {
 func (s *Scheduler) reload() error {
 	s.log.Debug("reload schdules")
 
-	if s.reloadSchedule.NextRun == nil {
+	if s.reloadSchedule.NextRunAt == nil {
 		if nextTs, err := gronx.NextTick(*s.reloadSchedule.Cron, false); err != nil {
 			return err
 		} else {
-			s.reloadSchedule.NextRun = &nextTs
+			s.reloadSchedule.NextRunAt = &nextTs
 		}
 	}
 
@@ -164,14 +164,14 @@ func (s *Scheduler) reload() error {
 			if !dbSchedule.IsActive {
 				s.log.Debug("the schedule is not active", "schedule", dbSchedule)
 				continue
-			} else if dbSchedule.NextRun == nil && dbSchedule.Cron == nil {
+			} else if dbSchedule.NextRunAt == nil && dbSchedule.Cron == nil {
 				s.log.Debug("the schedule is not valid")
 				dbSchedule.IsActive = false
 				if err := s.repository.Save(tx, dbSchedule); err != nil {
 					return err
 				}
 				continue
-			} else if dbSchedule.NextRun == nil {
+			} else if dbSchedule.NextRunAt == nil {
 				if nextTs, err := gronx.NextTick(*dbSchedule.Cron, true); err != nil {
 					s.log.Info("the schedule has an invalid cron expression", "error", err)
 					dbSchedule.IsActive = false
@@ -179,8 +179,8 @@ func (s *Scheduler) reload() error {
 						return err
 					}
 				} else {
-					dbSchedule.NextRun = &nextTs
-					s.log.Debug("update next fire time", "NextTs", *dbSchedule.NextRun)
+					dbSchedule.NextRunAt = &nextTs
+					s.log.Debug("update next fire time", "NextTs", *dbSchedule.NextRunAt)
 					if err := s.repository.Save(tx, dbSchedule); err != nil {
 						return err
 					}
@@ -216,7 +216,7 @@ func (s *Scheduler) getNext() *Schedule {
 	// yes, we should use heap, but I'm lazy
 	var next *Schedule = &s.reloadSchedule
 	for _, s := range s.schedules {
-		if s.NextRun.Before(*next.NextRun) {
+		if s.NextRunAt.Before(*next.NextRunAt) {
 			next = s
 		}
 	}
@@ -240,7 +240,7 @@ func (s *Scheduler) processTask(schedule *Schedule) error {
 			return nil
 		}
 		s.log.Info("loaded state from db", "schedule", dbSchedule)
-		if dbSchedule.NextRun == nil && dbSchedule.Cron == nil {
+		if dbSchedule.NextRunAt == nil && dbSchedule.Cron == nil {
 			s.log.Info("the schedule is not valid", "schedule", schedule.Id)
 			dbSchedule.IsActive = false
 			if err := s.repository.Save(tx, dbSchedule); err != nil {
@@ -249,23 +249,23 @@ func (s *Scheduler) processTask(schedule *Schedule) error {
 			delete(s.schedules, schedule.Id)
 			return nil
 		}
-		if dbSchedule.NextRun.Equal(*schedule.NextRun) || dbSchedule.NextRun.Before(*schedule.NextRun) {
+		if dbSchedule.NextRunAt.Equal(*schedule.NextRunAt) || dbSchedule.NextRunAt.Before(*schedule.NextRunAt) {
 			if err := s.handler(tx, dbSchedule); err != nil {
 				s.log.Error("the schedule processed with error", "error", err)
 			}
 			if dbSchedule.Cron == nil {
 				s.log.Info("the schedule is one shot")
 				dbSchedule.IsActive = false
-				dbSchedule.LastRun = dbSchedule.NextRun
+				dbSchedule.LastRunAt = dbSchedule.NextRunAt
 			} else {
 				if nextTs, err := gronx.NextTick(*dbSchedule.Cron, false); err != nil {
 					s.log.Info("the schedule has an invalid cron expression", "error", err)
 					dbSchedule.IsActive = false
-					dbSchedule.LastRun = dbSchedule.NextRun
+					dbSchedule.LastRunAt = dbSchedule.NextRunAt
 				} else {
 					s.log.Info("the schedule is planned", "time", nextTs)
-					dbSchedule.LastRun = dbSchedule.NextRun
-					dbSchedule.NextRun = &nextTs
+					dbSchedule.LastRunAt = dbSchedule.NextRunAt
+					dbSchedule.NextRunAt = &nextTs
 				}
 			}
 			if err := s.repository.Save(tx, dbSchedule); err != nil {
@@ -290,7 +290,7 @@ func dummySchedulerHandler(tx *sql.Tx, s *Schedule) error {
 	}
 	meta := make(map[string]interface{})
 	meta["name"] = s.Name
-	meta["moment"] = s.NextRun
+	meta["moment"] = s.NextRunAt
 	payload["_meta"] = meta
 	if encodedPayload, err := json.Marshal(payload); err != nil {
 		return err

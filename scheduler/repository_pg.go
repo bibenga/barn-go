@@ -52,8 +52,8 @@ func (r *PostgresSchedulerRepository) CreateTable(tx *sql.Tx) error {
 			c.NameField,
 			c.IsActiveField,
 			c.CronField,
-			c.NextRunField,
-			c.LastRunField,
+			c.NextRunAtField,
+			c.LastRunAtField,
 			c.MessageField,
 			c.IdField,
 			c.NameField,
@@ -70,7 +70,7 @@ func (r *PostgresSchedulerRepository) FindAllActive(tx *sql.Tx) ([]*Schedule, er
 			from %s
 			where %s
 			for update`,
-			c.IdField, c.NameField, c.IsActiveField, c.CronField, c.NextRunField, c.LastRunField, c.MessageField,
+			c.IdField, c.NameField, c.IsActiveField, c.CronField, c.NextRunAtField, c.LastRunAtField, c.MessageField,
 			c.TableName,
 			c.IsActiveField,
 		),
@@ -89,7 +89,7 @@ func (r *PostgresSchedulerRepository) FindAllActive(tx *sql.Tx) ([]*Schedule, er
 	var schedules []*Schedule
 	for rows.Next() {
 		var s Schedule = Schedule{}
-		err := rows.Scan(&s.Id, &s.Name, &s.IsActive, &s.Cron, &s.NextRun, &s.LastRun, &s.Message)
+		err := rows.Scan(&s.Id, &s.Name, &s.IsActive, &s.Cron, &s.NextRunAt, &s.LastRunAt, &s.Message)
 		if err != nil {
 			return nil, err
 		}
@@ -111,10 +111,10 @@ func (r *PostgresSchedulerRepository) FindAllActiveAndUnprocessed(tx *sql.Tx, mo
 			order by %s
 			limit $2
 			for update`,
-			c.IdField, c.NameField, c.IsActiveField, c.CronField, c.NextRunField, c.LastRunField, c.MessageField,
+			c.IdField, c.NameField, c.IsActiveField, c.CronField, c.NextRunAtField, c.LastRunAtField, c.MessageField,
 			c.TableName,
-			c.IsActiveField, c.NextRunField, c.NextRunField,
-			c.NextRunField,
+			c.IsActiveField, c.NextRunAtField, c.NextRunAtField,
+			c.NextRunAtField,
 		),
 	)
 	if err != nil {
@@ -131,7 +131,7 @@ func (r *PostgresSchedulerRepository) FindAllActiveAndUnprocessed(tx *sql.Tx, mo
 	var schedules []*Schedule
 	for rows.Next() {
 		var s Schedule = Schedule{}
-		err := rows.Scan(&s.Id, &s.Name, &s.IsActive, &s.Cron, &s.NextRun, &s.LastRun, &s.Message)
+		err := rows.Scan(&s.Id, &s.Name, &s.IsActive, &s.Cron, &s.NextRunAt, &s.LastRunAt, &s.Message)
 		if err != nil {
 			return nil, err
 		}
@@ -151,7 +151,7 @@ func (r *PostgresSchedulerRepository) FindOne(tx *sql.Tx, pk int) (*Schedule, er
 			from %s
 			where %s and %s=$1
 			for update`,
-			c.IdField, c.NameField, c.IsActiveField, c.CronField, c.NextRunField, c.LastRunField, c.MessageField,
+			c.IdField, c.NameField, c.IsActiveField, c.CronField, c.NextRunAtField, c.LastRunAtField, c.MessageField,
 			c.TableName,
 			c.IsActiveField, c.IdField,
 		),
@@ -163,7 +163,7 @@ func (r *PostgresSchedulerRepository) FindOne(tx *sql.Tx, pk int) (*Schedule, er
 
 	var s Schedule
 	row := stmt.QueryRow(pk)
-	if err := row.Scan(&s.Id, &s.Name, &s.IsActive, &s.Cron, &s.NextRun, &s.LastRun, &s.Message); err != nil {
+	if err := row.Scan(&s.Id, &s.Name, &s.IsActive, &s.Cron, &s.NextRunAt, &s.LastRunAt, &s.Message); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
 		} else {
@@ -174,7 +174,7 @@ func (r *PostgresSchedulerRepository) FindOne(tx *sql.Tx, pk int) (*Schedule, er
 }
 
 func (r *PostgresSchedulerRepository) Create(tx *sql.Tx, s *Schedule) error {
-	if s.Cron == nil && s.NextRun == nil {
+	if s.Cron == nil && s.NextRunAt == nil {
 		return fmt.Errorf("invalid cron and/or nextTs	")
 	}
 
@@ -185,7 +185,7 @@ func (r *PostgresSchedulerRepository) Create(tx *sql.Tx, s *Schedule) error {
 			values ($1, $2, $3, $4) 
 			returning %s`,
 			c.TableName,
-			c.NameField, c.CronField, c.NextRunField, c.MessageField,
+			c.NameField, c.CronField, c.NextRunAtField, c.MessageField,
 			c.IdField,
 		),
 	)
@@ -194,7 +194,7 @@ func (r *PostgresSchedulerRepository) Create(tx *sql.Tx, s *Schedule) error {
 	}
 	defer stmt.Close()
 
-	err = stmt.QueryRow(s.Name, s.Cron, s.NextRun, s.Message).Scan(&s.Id)
+	err = stmt.QueryRow(s.Name, s.Cron, s.NextRunAt, s.Message).Scan(&s.Id)
 	return err
 }
 
@@ -206,10 +206,10 @@ func (r *PostgresSchedulerRepository) Save(tx *sql.Tx, s *Schedule) error {
 			set %s=$1, %s=$2, %s=$3
 			where %s=$4`,
 			c.TableName,
-			c.IsActiveField, c.NextRunField, c.LastRunField,
+			c.IsActiveField, c.NextRunAtField, c.LastRunAtField,
 			c.IdField,
 		),
-		s.IsActive, s.NextRun, s.LastRun,
+		s.IsActive, s.NextRunAt, s.LastRunAt,
 		s.Id,
 	)
 	if err != nil {

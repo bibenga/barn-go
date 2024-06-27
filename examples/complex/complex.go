@@ -78,15 +78,15 @@ func main() {
 			}
 			payload["_meta"] = map[string]interface{}{
 				"schedule": s.Name,
-				"moment":   s.NextRun,
+				"moment":   s.NextRunAt,
 			}
 			spayload, err := json.Marshal(payload)
 			if err != nil {
 				return err
 			}
 			return queueRepository.Create(tx, &queue.Message{
-				Created: *s.NextRun,
-				Payload: string(spayload),
+				CreatedAt: *s.NextRunAt,
+				Payload:   string(spayload),
 			})
 		},
 	})

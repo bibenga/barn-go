@@ -9,21 +9,21 @@ import (
 const DefaultTableName = "barn_schedule"
 const DefaultIdField = "id"
 const DefaultNameField = "name"
-const DefaultIsActiveField = "is_active_flg"
+const DefaultIsActiveField = "is_active"
 const DefaultCronField = "cron"
-const DefaultNextRunField = "next_run_ts"
-const DefaultLastRunField = "last_run_ts"
+const DefaultNextRunAtField = "next_run_at"
+const DefaultLastRunAtField = "last_run_at"
 const DefaultMessageField = "message"
 
 type ScheduleQueryConfig struct {
-	TableName     string
-	IdField       string
-	NameField     string
-	IsActiveField string
-	CronField     string
-	NextRunField  string
-	LastRunField  string
-	MessageField  string
+	TableName      string
+	IdField        string
+	NameField      string
+	IsActiveField  string
+	CronField      string
+	NextRunAtField string
+	LastRunAtField string
+	MessageField   string
 }
 
 func (c *ScheduleQueryConfig) init() {
@@ -42,11 +42,11 @@ func (c *ScheduleQueryConfig) init() {
 	if c.CronField == "" {
 		c.CronField = DefaultCronField
 	}
-	if c.NextRunField == "" {
-		c.NextRunField = DefaultNextRunField
+	if c.NextRunAtField == "" {
+		c.NextRunAtField = DefaultNextRunAtField
 	}
-	if c.LastRunField == "" {
-		c.LastRunField = DefaultLastRunField
+	if c.LastRunAtField == "" {
+		c.LastRunAtField = DefaultLastRunAtField
 	}
 	if c.MessageField == "" {
 		c.MessageField = DefaultMessageField
@@ -54,13 +54,13 @@ func (c *ScheduleQueryConfig) init() {
 }
 
 type Schedule struct {
-	Id       int
-	Name     string
-	IsActive bool
-	Cron     *string
-	NextRun  *time.Time
-	LastRun  *time.Time
-	Message  *string
+	Id        int
+	Name      string
+	IsActive  bool
+	Cron      *string
+	NextRunAt *time.Time
+	LastRunAt *time.Time
+	Message   *string
 }
 
 func (e Schedule) LogValue() slog.Value {
@@ -73,15 +73,15 @@ func (e Schedule) LogValue() slog.Value {
 	} else {
 		args = append(args, slog.String("Cron", *e.Cron))
 	}
-	if e.NextRun == nil {
-		args = append(args, slog.Any("NextRun", nil))
+	if e.NextRunAt == nil {
+		args = append(args, slog.Any("NextRunAt", nil))
 	} else {
-		args = append(args, slog.Time("NextRun", *e.NextRun))
+		args = append(args, slog.Time("NextRunAt", *e.NextRunAt))
 	}
-	if e.LastRun == nil {
-		args = append(args, slog.Any("LastRun", nil))
+	if e.LastRunAt == nil {
+		args = append(args, slog.Any("LastRunAt", nil))
 	} else {
-		args = append(args, slog.Time("LastRun", *e.LastRun))
+		args = append(args, slog.Time("LastRunAt", *e.LastRunAt))
 	}
 	if e.Message == nil {
 		args = append(args, slog.Any("Message", nil))
