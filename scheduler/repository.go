@@ -26,33 +26,6 @@ type ScheduleQueryConfig struct {
 	MessageField   string
 }
 
-func (c *ScheduleQueryConfig) init() {
-	if c.TableName == "" {
-		c.TableName = DefaultTableName
-	}
-	if c.IdField == "" {
-		c.IdField = DefaultIdField
-	}
-	if c.NameField == "" {
-		c.NameField = DefaultNameField
-	}
-	if c.IsActiveField == "" {
-		c.IsActiveField = DefaultIsActiveField
-	}
-	if c.CronField == "" {
-		c.CronField = DefaultCronField
-	}
-	if c.NextRunAtField == "" {
-		c.NextRunAtField = DefaultNextRunAtField
-	}
-	if c.LastRunAtField == "" {
-		c.LastRunAtField = DefaultLastRunAtField
-	}
-	if c.MessageField == "" {
-		c.MessageField = DefaultMessageField
-	}
-}
-
 type Schedule struct {
 	Id        int
 	Name      string

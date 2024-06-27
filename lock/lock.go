@@ -66,7 +66,7 @@ func NewLockWithConfig(db *sql.DB, config *LockerConfig) *Locker {
 		config.Name = name
 	}
 	if config.Repository == nil {
-		config.Repository = NewDefaultPostgresLockRepository()
+		config.Repository = NewPostgresLockRepository()
 	}
 	if config.LockName == "" {
 		config.LockName = "barn"

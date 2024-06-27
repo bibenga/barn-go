@@ -44,7 +44,7 @@ func NewScheduler(db *sql.DB, config *SchedulerConfig) *Scheduler {
 		panic(errors.New("config is nil"))
 	}
 	if config.Repository == nil {
-		config.Repository = NewDefaultPostgresSchedulerRepository()
+		config.Repository = NewPostgresSchedulerRepository()
 		// or just panic?
 		// panic(errors.New("repository is nil"))
 	}

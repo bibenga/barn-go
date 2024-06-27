@@ -41,7 +41,7 @@ func NewWorker(db *sql.DB, config *WorkerConfig) *Worker {
 		panic(errors.New("config is nil"))
 	}
 	if config.Repository == nil {
-		config.Repository = NewDefaultPostgresMessageRepository()
+		config.Repository = NewPostgresMessageRepository()
 		// or just panic?
 		// panic(errors.New("repository is nil"))
 	}

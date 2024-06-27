@@ -22,9 +22,9 @@ func main() {
 	db := examples.InitDb(false)
 	defer db.Close()
 
-	lockRepository := lock.NewDefaultPostgresLockRepository()
-	schedulerRepository := scheduler.NewDefaultPostgresSchedulerRepository()
-	queueRepository := queue.NewDefaultPostgresMessageRepository()
+	lockRepository := lock.NewPostgresLockRepository()
+	schedulerRepository := scheduler.NewPostgresSchedulerRepository()
+	queueRepository := queue.NewPostgresMessageRepository()
 
 	err := barngo.RunInTransaction(db, func(tx *sql.Tx) error {
 		pgLockRepository := lockRepository.(*lock.PostgresLockRepository)

@@ -18,7 +18,7 @@ func main() {
 	db := examples.InitDb(false)
 	defer db.Close()
 
-	repository := scheduler.NewDefaultPostgresSchedulerRepository()
+	repository := scheduler.NewPostgresSchedulerRepository()
 
 	err := barngo.RunInTransaction(db, func(tx *sql.Tx) error {
 		r := repository.(*scheduler.PostgresSchedulerRepository)

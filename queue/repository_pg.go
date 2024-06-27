@@ -7,22 +7,53 @@ import (
 )
 
 type PostgresMessageRepository struct {
-	Config *MessageQueryConfig
+	config MessageQueryConfig
 }
 
-func NewPostgresMessageRepository(conig *MessageQueryConfig) MessageRepository {
-	conig.init()
-	return &PostgresMessageRepository{
-		Config: conig,
+func NewPostgresMessageRepository(config ...MessageQueryConfig) MessageRepository {
+	var c *MessageQueryConfig
+	if len(config) > 0 {
+		c = &config[0]
+	} else {
+		c = &MessageQueryConfig{}
+	}
+	r := &PostgresMessageRepository{
+		config: *c,
+	}
+	r.setupDefaults()
+	return r
+}
+
+func (r *PostgresMessageRepository) setupDefaults() {
+	c := &r.config
+	if c.TableName == "" {
+		c.TableName = DefaultTableName
+	}
+	if c.IdField == "" {
+		c.IdField = DefaultIdField
+	}
+	if c.CreatedAtField == "" {
+		c.CreatedAtField = DefaultCreatedAtField
+	}
+	if c.PayloadField == "" {
+		c.PayloadField = DefaultPayloadField
+	}
+	if c.IsProcessedField == "" {
+		c.IsProcessedField = DefaultIsProcessedField
+	}
+	if c.ProcessedAtField == "" {
+		c.ProcessedAtField = DefaultProcessedAtField
+	}
+	if c.IsSuccessField == "" {
+		c.IsSuccessField = DefaultIsSuccessField
+	}
+	if c.ErrorField == "" {
+		c.ErrorField = DefaultErrorField
 	}
 }
 
-func NewDefaultPostgresMessageRepository() MessageRepository {
-	return NewPostgresMessageRepository(&MessageQueryConfig{})
-}
-
 func (r *PostgresMessageRepository) CreateTable(tx *sql.Tx) error {
-	c := r.Config
+	c := &r.config
 	_, err := tx.Exec(
 		fmt.Sprintf(
 			`create table if not exists %s (
@@ -59,7 +90,7 @@ func (r *PostgresMessageRepository) CreateTable(tx *sql.Tx) error {
 }
 
 func (r *PostgresMessageRepository) FindNext(tx *sql.Tx) (*Message, error) {
-	c := r.Config
+	c := &r.config
 	stmt, err := tx.Prepare(
 		fmt.Sprintf(
 			`select %s, %s, %s, %s, %s, %s, %s
@@ -91,7 +122,7 @@ func (r *PostgresMessageRepository) FindNext(tx *sql.Tx) (*Message, error) {
 }
 
 func (r *PostgresMessageRepository) Create(tx *sql.Tx, m *Message) error {
-	c := r.Config
+	c := &r.config
 	stmt, err := tx.Prepare(
 		fmt.Sprintf(
 			`insert into %s(%s, %s, %s, %s, %s, %s) 
@@ -112,7 +143,7 @@ func (r *PostgresMessageRepository) Create(tx *sql.Tx, m *Message) error {
 }
 
 func (r *PostgresMessageRepository) Save(tx *sql.Tx, m *Message) error {
-	c := r.Config
+	c := &r.config
 	res, err := tx.Exec(
 		fmt.Sprintf(
 			`update %s 
@@ -139,7 +170,7 @@ func (r *PostgresMessageRepository) Save(tx *sql.Tx, m *Message) error {
 }
 
 func (r *PostgresMessageRepository) DeleteProcessed(tx *sql.Tx, t time.Time) (int, error) {
-	c := r.Config
+	c := &r.config
 	res, err := tx.Exec(
 		fmt.Sprintf(
 			`delete from %s 
@@ -160,7 +191,7 @@ func (r *PostgresMessageRepository) DeleteProcessed(tx *sql.Tx, t time.Time) (in
 }
 
 func (r *PostgresMessageRepository) DeleteAll(tx *sql.Tx) error {
-	c := r.Config
+	c := &r.config
 	_, err := tx.Exec(
 		fmt.Sprintf(
 			`delete from %s`,

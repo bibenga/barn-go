@@ -26,33 +26,6 @@ type MessageQueryConfig struct {
 	ErrorField       string
 }
 
-func (c *MessageQueryConfig) init() {
-	if c.TableName == "" {
-		c.TableName = DefaultTableName
-	}
-	if c.IdField == "" {
-		c.IdField = DefaultIdField
-	}
-	if c.CreatedAtField == "" {
-		c.CreatedAtField = DefaultCreatedAtField
-	}
-	if c.PayloadField == "" {
-		c.PayloadField = DefaultPayloadField
-	}
-	if c.IsProcessedField == "" {
-		c.IsProcessedField = DefaultIsProcessedField
-	}
-	if c.ProcessedAtField == "" {
-		c.ProcessedAtField = DefaultProcessedAtField
-	}
-	if c.IsSuccessField == "" {
-		c.IsSuccessField = DefaultIsSuccessField
-	}
-	if c.ErrorField == "" {
-		c.ErrorField = DefaultErrorField
-	}
-}
-
 type Message struct {
 	Id          int
 	CreatedAt   time.Time

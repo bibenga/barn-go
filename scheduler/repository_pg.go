@@ -7,33 +7,58 @@ import (
 )
 
 type PostgresSchedulerRepository struct {
-	Config *ScheduleQueryConfig
+	config ScheduleQueryConfig
 }
 
-func NewPostgresSchedulerRepository(conig *ScheduleQueryConfig) SchedulerRepository {
-	conig.init()
-	return &PostgresSchedulerRepository{
-		Config: conig,
+func NewPostgresSchedulerRepository(config ...ScheduleQueryConfig) SchedulerRepository {
+	var c *ScheduleQueryConfig
+	if len(config) > 0 {
+		c = &config[0]
+	} else {
+		c = &ScheduleQueryConfig{}
 	}
-}
-
-func NewDefaultPostgresSchedulerRepository() SchedulerRepository {
-	return NewPostgresSchedulerRepository(&ScheduleQueryConfig{})
-}
-
-func NewPostgresSimpleSchedulerRepository(conig *ScheduleQueryConfig) SimpleSchedulerRepository {
-	conig.init()
-	return &PostgresSchedulerRepository{
-		Config: conig,
+	r := &PostgresSchedulerRepository{
+		config: *c,
 	}
+	r.setupDefaults()
+	return r
 }
 
-func NewDefaultPostgresSimpleSchedulerRepository() SimpleSchedulerRepository {
-	return NewPostgresSimpleSchedulerRepository(&ScheduleQueryConfig{})
+func NewPostgresSimpleSchedulerRepository(config ...ScheduleQueryConfig) SimpleSchedulerRepository {
+	r := NewPostgresSchedulerRepository(config...)
+	return r.(SimpleSchedulerRepository)
+}
+
+func (r *PostgresSchedulerRepository) setupDefaults() {
+	c := &r.config
+	if c.TableName == "" {
+		c.TableName = DefaultTableName
+	}
+	if c.IdField == "" {
+		c.IdField = DefaultIdField
+	}
+	if c.NameField == "" {
+		c.NameField = DefaultNameField
+	}
+	if c.IsActiveField == "" {
+		c.IsActiveField = DefaultIsActiveField
+	}
+	if c.CronField == "" {
+		c.CronField = DefaultCronField
+	}
+	if c.NextRunAtField == "" {
+		c.NextRunAtField = DefaultNextRunAtField
+	}
+	if c.LastRunAtField == "" {
+		c.LastRunAtField = DefaultLastRunAtField
+	}
+	if c.MessageField == "" {
+		c.MessageField = DefaultMessageField
+	}
 }
 
 func (r *PostgresSchedulerRepository) CreateTable(tx *sql.Tx) error {
-	c := r.Config
+	c := &r.config
 	_, err := tx.Exec(
 		fmt.Sprintf(
 			`create table if not exists %s (
@@ -63,7 +88,7 @@ func (r *PostgresSchedulerRepository) CreateTable(tx *sql.Tx) error {
 }
 
 func (r *PostgresSchedulerRepository) FindAllActive(tx *sql.Tx) ([]*Schedule, error) {
-	c := r.Config
+	c := &r.config
 	stmt, err := tx.Prepare(
 		fmt.Sprintf(
 			`select %s, %s, %s, %s, %s, %s, %s 
@@ -102,7 +127,7 @@ func (r *PostgresSchedulerRepository) FindAllActive(tx *sql.Tx) ([]*Schedule, er
 }
 
 func (r *PostgresSchedulerRepository) FindAllActiveAndUnprocessed(tx *sql.Tx, moment time.Time) ([]*Schedule, error) {
-	c := r.Config
+	c := &r.config
 	stmt, err := tx.Prepare(
 		fmt.Sprintf(
 			`select %s, %s, %s, %s, %s, %s, %s 
@@ -144,7 +169,7 @@ func (r *PostgresSchedulerRepository) FindAllActiveAndUnprocessed(tx *sql.Tx, mo
 }
 
 func (r *PostgresSchedulerRepository) FindOne(tx *sql.Tx, pk int) (*Schedule, error) {
-	c := r.Config
+	c := &r.config
 	stmt, err := tx.Prepare(
 		fmt.Sprintf(
 			`select %s, %s, %s, %s, %s, %s, %s 
@@ -178,7 +203,7 @@ func (r *PostgresSchedulerRepository) Create(tx *sql.Tx, s *Schedule) error {
 		return fmt.Errorf("invalid cron and/or nextTs	")
 	}
 
-	c := r.Config
+	c := &r.config
 	stmt, err := tx.Prepare(
 		fmt.Sprintf(
 			`insert into %s(%s, %s, %s, %s) 
@@ -199,7 +224,7 @@ func (r *PostgresSchedulerRepository) Create(tx *sql.Tx, s *Schedule) error {
 }
 
 func (r *PostgresSchedulerRepository) Save(tx *sql.Tx, s *Schedule) error {
-	c := r.Config
+	c := &r.config
 	res, err := tx.Exec(
 		fmt.Sprintf(
 			`update %s 
@@ -226,7 +251,7 @@ func (r *PostgresSchedulerRepository) Save(tx *sql.Tx, s *Schedule) error {
 }
 
 func (r *PostgresSchedulerRepository) Delete(tx *sql.Tx, pk int) error {
-	c := r.Config
+	c := &r.config
 	res, err := tx.Exec(
 		fmt.Sprintf(
 			`delete from %s 
@@ -250,7 +275,7 @@ func (r *PostgresSchedulerRepository) Delete(tx *sql.Tx, pk int) error {
 }
 
 func (r *PostgresSchedulerRepository) DeleteAll(tx *sql.Tx) error {
-	c := r.Config
+	c := &r.config
 	_, err := tx.Exec(
 		fmt.Sprintf(
 			`delete from %s`,

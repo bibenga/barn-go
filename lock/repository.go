@@ -18,21 +18,6 @@ type LockQueryConfig struct {
 	OwnerField    string
 }
 
-func (c *LockQueryConfig) init() {
-	if c.TableName == "" {
-		c.TableName = DefaultTableName
-	}
-	if c.NameField == "" {
-		c.NameField = DefaultNameField
-	}
-	if c.LockedAtField == "" {
-		c.LockedAtField = DefaultLockedAtField
-	}
-	if c.OwnerField == "" {
-		c.OwnerField = DefaultOwnerField
-	}
-}
-
 type Lock struct {
 	Name     string
 	LockedAt *time.Time

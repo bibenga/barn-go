@@ -71,7 +71,7 @@ func setup(t *testing.T) *sql.DB {
 	assert.NotNil(db)
 	assert.NoError(db.Ping())
 
-	repository := NewDefaultPostgresLockRepository()
+	repository := NewPostgresLockRepository()
 	err = barngo.RunInTransaction(db, func(tx *sql.Tx) error {
 		pgRepository := repository.(*PostgresLockRepository)
 		if err := pgRepository.CreateTable(tx); err != nil {

@@ -6,22 +6,41 @@ import (
 )
 
 type PostgresLockRepository struct {
-	Config *LockQueryConfig
+	config LockQueryConfig
 }
 
-func NewPostgresLockRepository(conig *LockQueryConfig) LockRepository {
-	conig.init()
-	return &PostgresLockRepository{
-		Config: conig,
+func NewPostgresLockRepository(config ...LockQueryConfig) LockRepository {
+	var c *LockQueryConfig
+	if len(config) > 0 {
+		c = &config[0]
+	} else {
+		c = &LockQueryConfig{}
+	}
+	r := &PostgresLockRepository{
+		config: *c,
+	}
+	r.setupDefaults()
+	return r
+}
+
+func (r *PostgresLockRepository) setupDefaults() {
+	c := &r.config
+	if c.TableName == "" {
+		c.TableName = DefaultTableName
+	}
+	if c.NameField == "" {
+		c.NameField = DefaultNameField
+	}
+	if c.LockedAtField == "" {
+		c.LockedAtField = DefaultLockedAtField
+	}
+	if c.OwnerField == "" {
+		c.OwnerField = DefaultOwnerField
 	}
 }
 
-func NewDefaultPostgresLockRepository() LockRepository {
-	return NewPostgresLockRepository(&LockQueryConfig{})
-}
-
 func (r *PostgresLockRepository) CreateTable(tx *sql.Tx) error {
-	c := r.Config
+	c := &r.config
 	_, err := tx.Exec(
 		fmt.Sprintf(
 			`CREATE TABLE IF NOT EXISTS %s  (
@@ -41,7 +60,7 @@ func (r *PostgresLockRepository) CreateTable(tx *sql.Tx) error {
 }
 
 func (r *PostgresLockRepository) FindOne(tx *sql.Tx, name string) (*Lock, error) {
-	c := r.Config
+	c := &r.config
 	stmt, err := tx.Prepare(
 		fmt.Sprintf(
 			`select %s, %s 
@@ -70,7 +89,7 @@ func (r *PostgresLockRepository) FindOne(tx *sql.Tx, name string) (*Lock, error)
 }
 
 func (r *PostgresLockRepository) Create(tx *sql.Tx, name string) error {
-	c := r.Config
+	c := &r.config
 	_, err := tx.Exec(
 		fmt.Sprintf(
 			`insert into %s (%s) 
@@ -85,7 +104,7 @@ func (r *PostgresLockRepository) Create(tx *sql.Tx, name string) error {
 }
 
 func (r *PostgresLockRepository) Save(tx *sql.Tx, lock *Lock) error {
-	c := r.Config
+	c := &r.config
 	res, err := tx.Exec(
 		fmt.Sprintf(
 			`update %s 
@@ -112,7 +131,7 @@ func (r *PostgresLockRepository) Save(tx *sql.Tx, lock *Lock) error {
 }
 
 func (r *PostgresLockRepository) DeleteAll(tx *sql.Tx) error {
-	c := r.Config
+	c := &r.config
 	_, err := tx.Exec(
 		fmt.Sprintf(
 			`delete from %s`,

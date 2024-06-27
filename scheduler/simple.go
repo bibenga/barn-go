@@ -40,7 +40,7 @@ func NewSimpleScheduler(db *sql.DB, config *SimpleSchedulerConfig) *SimpleSchedu
 		panic(errors.New("config is nil"))
 	}
 	if config.Repository == nil {
-		config.Repository = NewDefaultPostgresSimpleSchedulerRepository()
+		config.Repository = NewPostgresSimpleSchedulerRepository()
 	}
 	if config.Cron == "" {
 		config.Cron = "* * * * *"

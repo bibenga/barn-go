@@ -15,7 +15,7 @@ func main() {
 	db := examples.InitDb(false)
 	defer db.Close()
 
-	repository := lock.NewDefaultPostgresLockRepository()
+	repository := lock.NewPostgresLockRepository()
 	err := barngo.RunInTransaction(db, func(tx *sql.Tx) error {
 		pgRepository := repository.(*lock.PostgresLockRepository)
 		if err := pgRepository.CreateTable(tx); err != nil {

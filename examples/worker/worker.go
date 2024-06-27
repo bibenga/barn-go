@@ -20,7 +20,7 @@ func main() {
 	db := examples.InitDb(false)
 	defer db.Close()
 
-	repository := queue.NewDefaultPostgresMessageRepository()
+	repository := queue.NewPostgresMessageRepository()
 
 	err := barngo.RunInTransaction(db, func(tx *sql.Tx) error {
 		r := repository.(*queue.PostgresMessageRepository)
