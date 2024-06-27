@@ -1,4 +1,4 @@
-package task
+package queue
 
 import (
 	"database/sql"
@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-const DefaultTableName = "barn_task"
+const DefaultTableName = "barn_queue"
 const DefaultIdField = "id"
 const DefaultCreatedAtField = "created_at"
 const DefaultNameField = "name"
@@ -16,7 +16,7 @@ const DefaultProcessedAtField = "processed_at"
 const DefaultIsSuccessField = "is_success_flg"
 const DefaultErrorField = "error"
 
-type TaskQueryConfig struct {
+type QueueQueryConfig struct {
 	TableName        string
 	IdField          string
 	CreatedAtField   string
@@ -28,7 +28,7 @@ type TaskQueryConfig struct {
 	ErrorField       string
 }
 
-type Task struct {
+type Message struct {
 	Id          int
 	CreatedAt   time.Time
 	Name        string
@@ -39,7 +39,7 @@ type Task struct {
 	Error       *string
 }
 
-func (e Task) LogValue() slog.Value {
+func (e Message) LogValue() slog.Value {
 	var args []slog.Attr
 	args = append(args, slog.Int("Id", e.Id))
 	args = append(args, slog.Time("CreatedAt", e.CreatedAt))
@@ -64,9 +64,9 @@ func (e Task) LogValue() slog.Value {
 	return slog.GroupValue(args...)
 }
 
-type TaskRepository interface {
-	FindNext(tx *sql.Tx) (*Task, error)
-	Create(tx *sql.Tx, task *Task) error
-	Save(tx *sql.Tx, task *Task) error
-	DeleteProcessed(tx *sql.Tx, t time.Time) (int, error)
+type QueueRepository interface {
+	FindNext(tx *sql.Tx) (*Message, error)
+	Create(tx *sql.Tx, task *Message) error
+	Save(tx *sql.Tx, task *Message) error
+	DeleteOld(tx *sql.Tx, t time.Time) (int, error)
 }

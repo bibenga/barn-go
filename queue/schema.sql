@@ -1,4 +1,4 @@
-create table if not exists barn_task (
+create table if not exists barn_queue (
     id serial not null, 
     created_ts timestamp with time zone not null, 
     name varchar not null,
@@ -10,4 +10,4 @@ create table if not exists barn_task (
     primary key (id)
 );
 
-create index if not exists idx_barn_message_created_ts on barn_message (created_ts);
+create index if not exists idx_barn_queue_created_ts on barn_queue (created_ts);

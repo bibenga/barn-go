@@ -1,4 +1,4 @@
-package task
+package queue
 
 import (
 	"database/sql"
@@ -7,25 +7,25 @@ import (
 	"time"
 )
 
-type PostgresTaskRepository struct {
-	config TaskQueryConfig
+type PostgresQueueRepository struct {
+	config QueueQueryConfig
 }
 
-func NewPostgresTaskRepository(config ...TaskQueryConfig) TaskRepository {
-	var c *TaskQueryConfig
+func NewPostgresQueueRepository(config ...QueueQueryConfig) QueueRepository {
+	var c *QueueQueryConfig
 	if len(config) > 0 {
 		c = &config[0]
 	} else {
-		c = &TaskQueryConfig{}
+		c = &QueueQueryConfig{}
 	}
-	r := &PostgresTaskRepository{
+	r := &PostgresQueueRepository{
 		config: *c,
 	}
 	r.setupDefaults()
 	return r
 }
 
-func (r *PostgresTaskRepository) setupDefaults() {
+func (r *PostgresQueueRepository) setupDefaults() {
 	c := &r.config
 	if c.TableName == "" {
 		c.TableName = DefaultTableName
@@ -56,7 +56,7 @@ func (r *PostgresTaskRepository) setupDefaults() {
 	}
 }
 
-func (r *PostgresTaskRepository) CreateTable(tx *sql.Tx) error {
+func (r *PostgresQueueRepository) CreateTable(tx *sql.Tx) error {
 	c := &r.config
 	_, err := tx.Exec(
 		fmt.Sprintf(
@@ -96,7 +96,7 @@ func (r *PostgresTaskRepository) CreateTable(tx *sql.Tx) error {
 	return err
 }
 
-func (r *PostgresTaskRepository) FindNext(tx *sql.Tx) (*Task, error) {
+func (r *PostgresQueueRepository) FindNext(tx *sql.Tx) (*Message, error) {
 	c := &r.config
 	stmt, err := tx.Prepare(
 		fmt.Sprintf(
@@ -116,19 +116,19 @@ func (r *PostgresTaskRepository) FindNext(tx *sql.Tx) (*Task, error) {
 		return nil, err
 	}
 	defer stmt.Close()
-	var t Task
+	var m Message
 	row := stmt.QueryRow()
-	if err := row.Scan(&t.Id, &t.CreatedAt, &t.Name, &t.Payload, &t.IsProcessed, &t.ProcessedAt, &t.IsSuccess, &t.Error); err != nil {
+	if err := row.Scan(&m.Id, &m.CreatedAt, &m.Name, &m.Payload, &m.IsProcessed, &m.ProcessedAt, &m.IsSuccess, &m.Error); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
 		} else {
 			return nil, err
 		}
 	}
-	return &t, nil
+	return &m, nil
 }
 
-func (r *PostgresTaskRepository) Create(tx *sql.Tx, t *Task) error {
+func (r *PostgresQueueRepository) Create(tx *sql.Tx, m *Message) error {
 	c := &r.config
 	stmt, err := tx.Prepare(
 		fmt.Sprintf(
@@ -145,11 +145,11 @@ func (r *PostgresTaskRepository) Create(tx *sql.Tx, t *Task) error {
 	}
 	defer stmt.Close()
 
-	err = stmt.QueryRow(&t.CreatedAt, &t.Name, &t.Payload, &t.IsProcessed, &t.ProcessedAt, &t.IsSuccess, &t.Error).Scan(&t.Id)
+	err = stmt.QueryRow(&m.CreatedAt, &m.Name, &m.Payload, &m.IsProcessed, &m.ProcessedAt, &m.IsSuccess, &m.Error).Scan(&m.Id)
 	return err
 }
 
-func (r *PostgresTaskRepository) Save(tx *sql.Tx, t *Task) error {
+func (r *PostgresQueueRepository) Save(tx *sql.Tx, m *Message) error {
 	c := &r.config
 	res, err := tx.Exec(
 		fmt.Sprintf(
@@ -160,8 +160,8 @@ func (r *PostgresTaskRepository) Save(tx *sql.Tx, t *Task) error {
 			c.IsProcessedField, c.ProcessedAtField, c.IsSuccessField, c.ErrorField,
 			c.IdField,
 		),
-		t.IsProcessed, t.ProcessedAt, t.IsSuccess, t.Error,
-		t.Id,
+		m.IsProcessed, m.ProcessedAt, m.IsSuccess, m.Error,
+		m.Id,
 	)
 	if err != nil {
 		return err
@@ -176,7 +176,7 @@ func (r *PostgresTaskRepository) Save(tx *sql.Tx, t *Task) error {
 	return nil
 }
 
-func (r *PostgresTaskRepository) DeleteProcessed(tx *sql.Tx, t time.Time) (int, error) {
+func (r *PostgresQueueRepository) DeleteOld(tx *sql.Tx, moment time.Time) (int, error) {
 	c := &r.config
 	res, err := tx.Exec(
 		fmt.Sprintf(
@@ -185,7 +185,7 @@ func (r *PostgresTaskRepository) DeleteProcessed(tx *sql.Tx, t time.Time) (int, 
 			c.TableName,
 			c.IsProcessedField, c.CreatedAtField,
 		),
-		t,
+		moment,
 	)
 	if err != nil {
 		return 0, err
@@ -197,7 +197,7 @@ func (r *PostgresTaskRepository) DeleteProcessed(tx *sql.Tx, t time.Time) (int, 
 	}
 }
 
-func (r *PostgresTaskRepository) DeleteAll(tx *sql.Tx) error {
+func (r *PostgresQueueRepository) DeleteAll(tx *sql.Tx) error {
 	c := &r.config
 	_, err := tx.Exec(
 		fmt.Sprintf(
@@ -208,4 +208,4 @@ func (r *PostgresTaskRepository) DeleteAll(tx *sql.Tx) error {
 	return err
 }
 
-var _ TaskRepository = &PostgresTaskRepository{}
+var _ QueueRepository = &PostgresQueueRepository{}

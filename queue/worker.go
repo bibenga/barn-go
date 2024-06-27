@@ -1,4 +1,4 @@
-package task
+package queue
 
 import (
 	"context"
@@ -13,11 +13,11 @@ import (
 	barngo "github.com/bibenga/barn-go"
 )
 
-type MessageHandler func(tx *sql.Tx, message *Task) error
+type MessageHandler func(tx *sql.Tx, message *Message) error
 
 type WorkerConfig struct {
 	Log        *slog.Logger
-	Repository TaskRepository
+	Repository QueueRepository
 	Cron       string
 	Handler    MessageHandler
 }
@@ -26,7 +26,7 @@ type Worker struct {
 	log        *slog.Logger
 	handler    MessageHandler
 	db         *sql.DB
-	repository TaskRepository
+	repository QueueRepository
 	cron       string
 	running    atomic.Bool
 	cancel     context.CancelFunc
@@ -41,7 +41,7 @@ func NewWorker(db *sql.DB, config *WorkerConfig) *Worker {
 		panic(errors.New("config is nil"))
 	}
 	if config.Repository == nil {
-		config.Repository = NewPostgresTaskRepository()
+		config.Repository = NewPostgresQueueRepository()
 		// or just panic?
 		// panic(errors.New("repository is nil"))
 	}
@@ -178,13 +178,13 @@ func (s *Worker) deleteOld() error {
 	s.log.Debug("deleteOld")
 	return barngo.RunInTransaction(s.db, func(tx *sql.Tx) error {
 		m := time.Now().UTC().Add(-30 * 24 * time.Hour)
-		deleted, err := s.repository.DeleteProcessed(tx, m)
+		deleted, err := s.repository.DeleteOld(tx, m)
 		s.log.Debug("the old messages is deleted", "count", deleted)
 		return err
 	})
 }
 
-func dummyMessageHandler(tx *sql.Tx, message *Task) error {
+func dummyMessageHandler(tx *sql.Tx, message *Message) error {
 	slog.Info("DUMMY: process", "message", message)
 	return nil
 }

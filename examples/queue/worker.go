@@ -11,7 +11,7 @@ import (
 
 	barngo "github.com/bibenga/barn-go"
 	"github.com/bibenga/barn-go/examples"
-	"github.com/bibenga/barn-go/task"
+	"github.com/bibenga/barn-go/queue"
 )
 
 func main() {
@@ -20,10 +20,10 @@ func main() {
 	db := examples.InitDb(false)
 	defer db.Close()
 
-	repository := task.NewPostgresTaskRepository()
+	repository := queue.NewPostgresQueueRepository()
 
 	err := barngo.RunInTransaction(db, func(tx *sql.Tx) error {
-		r := repository.(*task.PostgresTaskRepository)
+		r := repository.(*queue.PostgresQueueRepository)
 		if err := r.CreateTable(tx); err != nil {
 			return err
 		}
@@ -35,7 +35,7 @@ func main() {
 		if err != nil {
 			return err
 		}
-		message1 := task.Task{
+		message1 := queue.Message{
 			Name:      "olala1",
 			Payload:   string(payload1),
 			CreatedAt: time.Now().UTC(),
@@ -52,7 +52,7 @@ func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	worker := task.NewWorker(db, &task.WorkerConfig{
+	worker := queue.NewWorker(db, &queue.WorkerConfig{
 		Repository: repository,
 		Cron:       "*/5 * * * * *",
 	})
