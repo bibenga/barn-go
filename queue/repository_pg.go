@@ -105,7 +105,7 @@ func (r *PostgresQueueRepository) FindNext(tx *sql.Tx) (*Message, error) {
 			where not %s
 			order by %s
 			limit 1
-			for update`,
+			for update skip locked`,
 			c.IdField, c.CreatedAtField, c.NameField, c.PayloadField, c.IsProcessedField, c.ProcessedAtField, c.IsSuccessField, c.ErrorField,
 			c.TableName,
 			c.IsProcessedField,
