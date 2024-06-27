@@ -1,7 +1,7 @@
-create table if not exists barn_message (
+create table if not exists barn_task (
     id serial not null, 
-    queue varchar, 
     created_ts timestamp with time zone not null, 
+    name varchar not null,
     payload jsonb not null, 
     is_processed_flg boolean default false not null, 
     processed_ts timestamp with time zone, 

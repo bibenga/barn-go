@@ -12,8 +12,8 @@ import (
 	barngo "github.com/bibenga/barn-go"
 	"github.com/bibenga/barn-go/examples"
 	"github.com/bibenga/barn-go/lock"
-	"github.com/bibenga/barn-go/queue"
 	"github.com/bibenga/barn-go/scheduler"
+	"github.com/bibenga/barn-go/task"
 )
 
 func main() {
@@ -32,9 +32,9 @@ func main() {
 			TableName: "barn.schedule",
 		},
 	)
-	queueRepository := queue.NewPostgresMessageRepository(
-		queue.MessageQueryConfig{
-			TableName: "barn.message",
+	queueRepository := task.NewPostgresMessageRepository(
+		task.MessageQueryConfig{
+			TableName: "barn.task",
 		},
 	)
 
@@ -69,7 +69,7 @@ func main() {
 		// 	return err
 		// }
 
-		pgQueueRepository := queueRepository.(*queue.PostgresMessageRepository)
+		pgQueueRepository := queueRepository.(*task.PostgresMessageRepository)
 		if err := pgQueueRepository.CreateTable(tx); err != nil {
 			return err
 		}
@@ -101,8 +101,9 @@ func main() {
 			if err != nil {
 				return err
 			}
-			return queueRepository.Create(tx, &queue.Message{
+			return queueRepository.Create(tx, &task.Message{
 				CreatedAt: *s.NextRunAt,
+				Name:      s.Name,
 				Payload:   string(spayload),
 			})
 		},
@@ -127,7 +128,7 @@ func main() {
 
 	leader.StartContext(ctx)
 
-	worker := queue.NewWorker(db, &queue.WorkerConfig{
+	worker := task.NewWorker(db, &task.WorkerConfig{
 		Repository: queueRepository,
 		Cron:       "*/5 * * * * *",
 	})
