@@ -136,7 +136,7 @@ func (l *LeaderElector) hearbeat() error {
 				l.log.Info("the lock was rotten and it is acquired")
 				return l.onElected()
 			} else {
-				// l.log.Info("the lock was rotten and it is acquired")
+				l.log.Debug("the lock is owned by someone")
 			}
 		}
 	}
