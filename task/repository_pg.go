@@ -7,25 +7,25 @@ import (
 	"time"
 )
 
-type PostgresMessageRepository struct {
-	config MessageQueryConfig
+type PostgresTaskRepository struct {
+	config TaskQueryConfig
 }
 
-func NewPostgresMessageRepository(config ...MessageQueryConfig) MessageRepository {
-	var c *MessageQueryConfig
+func NewPostgresTaskRepository(config ...TaskQueryConfig) TaskRepository {
+	var c *TaskQueryConfig
 	if len(config) > 0 {
 		c = &config[0]
 	} else {
-		c = &MessageQueryConfig{}
+		c = &TaskQueryConfig{}
 	}
-	r := &PostgresMessageRepository{
+	r := &PostgresTaskRepository{
 		config: *c,
 	}
 	r.setupDefaults()
 	return r
 }
 
-func (r *PostgresMessageRepository) setupDefaults() {
+func (r *PostgresTaskRepository) setupDefaults() {
 	c := &r.config
 	if c.TableName == "" {
 		c.TableName = DefaultTableName
@@ -56,7 +56,7 @@ func (r *PostgresMessageRepository) setupDefaults() {
 	}
 }
 
-func (r *PostgresMessageRepository) CreateTable(tx *sql.Tx) error {
+func (r *PostgresTaskRepository) CreateTable(tx *sql.Tx) error {
 	c := &r.config
 	_, err := tx.Exec(
 		fmt.Sprintf(
@@ -96,7 +96,7 @@ func (r *PostgresMessageRepository) CreateTable(tx *sql.Tx) error {
 	return err
 }
 
-func (r *PostgresMessageRepository) FindNext(tx *sql.Tx) (*Message, error) {
+func (r *PostgresTaskRepository) FindNext(tx *sql.Tx) (*Task, error) {
 	c := &r.config
 	stmt, err := tx.Prepare(
 		fmt.Sprintf(
@@ -116,19 +116,19 @@ func (r *PostgresMessageRepository) FindNext(tx *sql.Tx) (*Message, error) {
 		return nil, err
 	}
 	defer stmt.Close()
-	var m Message
+	var t Task
 	row := stmt.QueryRow()
-	if err := row.Scan(&m.Id, &m.CreatedAt, &m.Name, &m.Payload, &m.IsProcessed, &m.ProcessedAt, &m.IsSuccess, &m.Error); err != nil {
+	if err := row.Scan(&t.Id, &t.CreatedAt, &t.Name, &t.Payload, &t.IsProcessed, &t.ProcessedAt, &t.IsSuccess, &t.Error); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
 		} else {
 			return nil, err
 		}
 	}
-	return &m, nil
+	return &t, nil
 }
 
-func (r *PostgresMessageRepository) Create(tx *sql.Tx, m *Message) error {
+func (r *PostgresTaskRepository) Create(tx *sql.Tx, t *Task) error {
 	c := &r.config
 	stmt, err := tx.Prepare(
 		fmt.Sprintf(
@@ -145,11 +145,11 @@ func (r *PostgresMessageRepository) Create(tx *sql.Tx, m *Message) error {
 	}
 	defer stmt.Close()
 
-	err = stmt.QueryRow(&m.CreatedAt, &m.Name, &m.Payload, &m.IsProcessed, &m.ProcessedAt, &m.IsSuccess, &m.Error).Scan(&m.Id)
+	err = stmt.QueryRow(&t.CreatedAt, &t.Name, &t.Payload, &t.IsProcessed, &t.ProcessedAt, &t.IsSuccess, &t.Error).Scan(&t.Id)
 	return err
 }
 
-func (r *PostgresMessageRepository) Save(tx *sql.Tx, m *Message) error {
+func (r *PostgresTaskRepository) Save(tx *sql.Tx, t *Task) error {
 	c := &r.config
 	res, err := tx.Exec(
 		fmt.Sprintf(
@@ -160,8 +160,8 @@ func (r *PostgresMessageRepository) Save(tx *sql.Tx, m *Message) error {
 			c.IsProcessedField, c.ProcessedAtField, c.IsSuccessField, c.ErrorField,
 			c.IdField,
 		),
-		m.IsProcessed, m.ProcessedAt, m.IsSuccess, m.Error,
-		m.Id,
+		t.IsProcessed, t.ProcessedAt, t.IsSuccess, t.Error,
+		t.Id,
 	)
 	if err != nil {
 		return err
@@ -176,7 +176,7 @@ func (r *PostgresMessageRepository) Save(tx *sql.Tx, m *Message) error {
 	return nil
 }
 
-func (r *PostgresMessageRepository) DeleteProcessed(tx *sql.Tx, t time.Time) (int, error) {
+func (r *PostgresTaskRepository) DeleteProcessed(tx *sql.Tx, t time.Time) (int, error) {
 	c := &r.config
 	res, err := tx.Exec(
 		fmt.Sprintf(
@@ -197,7 +197,7 @@ func (r *PostgresMessageRepository) DeleteProcessed(tx *sql.Tx, t time.Time) (in
 	}
 }
 
-func (r *PostgresMessageRepository) DeleteAll(tx *sql.Tx) error {
+func (r *PostgresTaskRepository) DeleteAll(tx *sql.Tx) error {
 	c := &r.config
 	_, err := tx.Exec(
 		fmt.Sprintf(
@@ -208,4 +208,4 @@ func (r *PostgresMessageRepository) DeleteAll(tx *sql.Tx) error {
 	return err
 }
 
-var _ MessageRepository = &PostgresMessageRepository{}
+var _ TaskRepository = &PostgresTaskRepository{}

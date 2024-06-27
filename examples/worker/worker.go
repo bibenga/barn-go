@@ -20,10 +20,10 @@ func main() {
 	db := examples.InitDb(false)
 	defer db.Close()
 
-	repository := task.NewPostgresMessageRepository()
+	repository := task.NewPostgresTaskRepository()
 
 	err := barngo.RunInTransaction(db, func(tx *sql.Tx) error {
-		r := repository.(*task.PostgresMessageRepository)
+		r := repository.(*task.PostgresTaskRepository)
 		if err := r.CreateTable(tx); err != nil {
 			return err
 		}
@@ -35,7 +35,7 @@ func main() {
 		if err != nil {
 			return err
 		}
-		message1 := task.Message{
+		message1 := task.Task{
 			Name:      "olala1",
 			Payload:   string(payload1),
 			CreatedAt: time.Now().UTC(),

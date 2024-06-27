@@ -32,8 +32,8 @@ func main() {
 			TableName: "barn.schedule",
 		},
 	)
-	queueRepository := task.NewPostgresMessageRepository(
-		task.MessageQueryConfig{
+	taskRepository := task.NewPostgresTaskRepository(
+		task.TaskQueryConfig{
 			TableName: "barn.task",
 		},
 	)
@@ -69,7 +69,7 @@ func main() {
 		// 	return err
 		// }
 
-		pgQueueRepository := queueRepository.(*task.PostgresMessageRepository)
+		pgQueueRepository := taskRepository.(*task.PostgresTaskRepository)
 		if err := pgQueueRepository.CreateTable(tx); err != nil {
 			return err
 		}
@@ -101,7 +101,7 @@ func main() {
 			if err != nil {
 				return err
 			}
-			return queueRepository.Create(tx, &task.Message{
+			return taskRepository.Create(tx, &task.Task{
 				CreatedAt: *s.NextRunAt,
 				Name:      s.Name,
 				Payload:   string(spayload),
@@ -129,7 +129,7 @@ func main() {
 	leader.StartContext(ctx)
 
 	worker := task.NewWorker(db, &task.WorkerConfig{
-		Repository: queueRepository,
+		Repository: taskRepository,
 		Cron:       "*/5 * * * * *",
 	})
 	worker.StartContext(ctx)

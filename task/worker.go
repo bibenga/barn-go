@@ -13,11 +13,11 @@ import (
 	barngo "github.com/bibenga/barn-go"
 )
 
-type MessageHandler func(tx *sql.Tx, message *Message) error
+type MessageHandler func(tx *sql.Tx, message *Task) error
 
 type WorkerConfig struct {
 	Log        *slog.Logger
-	Repository MessageRepository
+	Repository TaskRepository
 	Cron       string
 	Handler    MessageHandler
 }
@@ -26,7 +26,7 @@ type Worker struct {
 	log        *slog.Logger
 	handler    MessageHandler
 	db         *sql.DB
-	repository MessageRepository
+	repository TaskRepository
 	cron       string
 	running    atomic.Bool
 	cancel     context.CancelFunc
@@ -41,7 +41,7 @@ func NewWorker(db *sql.DB, config *WorkerConfig) *Worker {
 		panic(errors.New("config is nil"))
 	}
 	if config.Repository == nil {
-		config.Repository = NewPostgresMessageRepository()
+		config.Repository = NewPostgresTaskRepository()
 		// or just panic?
 		// panic(errors.New("repository is nil"))
 	}
@@ -184,7 +184,7 @@ func (s *Worker) deleteOld() error {
 	})
 }
 
-func dummyMessageHandler(tx *sql.Tx, message *Message) error {
+func dummyMessageHandler(tx *sql.Tx, message *Task) error {
 	slog.Info("DUMMY: process", "message", message)
 	return nil
 }

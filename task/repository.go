@@ -16,7 +16,7 @@ const DefaultProcessedAtField = "processed_at"
 const DefaultIsSuccessField = "is_success_flg"
 const DefaultErrorField = "error"
 
-type MessageQueryConfig struct {
+type TaskQueryConfig struct {
 	TableName        string
 	IdField          string
 	CreatedAtField   string
@@ -28,7 +28,7 @@ type MessageQueryConfig struct {
 	ErrorField       string
 }
 
-type Message struct {
+type Task struct {
 	Id          int
 	CreatedAt   time.Time
 	Name        string
@@ -39,7 +39,7 @@ type Message struct {
 	Error       *string
 }
 
-func (e Message) LogValue() slog.Value {
+func (e Task) LogValue() slog.Value {
 	var args []slog.Attr
 	args = append(args, slog.Int("Id", e.Id))
 	args = append(args, slog.Time("CreatedAt", e.CreatedAt))
@@ -64,9 +64,9 @@ func (e Message) LogValue() slog.Value {
 	return slog.GroupValue(args...)
 }
 
-type MessageRepository interface {
-	FindNext(tx *sql.Tx) (*Message, error)
-	Create(tx *sql.Tx, m *Message) error
-	Save(tx *sql.Tx, m *Message) error
+type TaskRepository interface {
+	FindNext(tx *sql.Tx) (*Task, error)
+	Create(tx *sql.Tx, task *Task) error
+	Save(tx *sql.Tx, task *Task) error
 	DeleteProcessed(tx *sql.Tx, t time.Time) (int, error)
 }
