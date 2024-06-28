@@ -70,8 +70,7 @@ func (r *PostgresSchedulerRepository) CreateTable(tx *sql.Tx) error {
 				%s timestamp with time zone, 
 				%s timestamp with time zone, 
 				%s jsonb, 
-				primary key (%s),
-				unique (%s)
+				primary key (%s)
 			)`,
 			c.TableName,
 			c.IdField,
@@ -82,7 +81,6 @@ func (r *PostgresSchedulerRepository) CreateTable(tx *sql.Tx) error {
 			c.LastRunAtField,
 			c.PayloadField,
 			c.IdField,
-			c.NameField,
 		),
 	)
 	return err

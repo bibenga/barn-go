@@ -6,6 +6,5 @@ create table if not exists barn_schedule (
     next_run_ts timestamp with time zone, 
     last_run_ts timestamp with time zone, 
     payload jsonb, 
-    primary key (id),
-    unique (name)
+    primary key (id)
 );
