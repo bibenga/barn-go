@@ -30,8 +30,13 @@ func main() {
 		}
 
 		cron1 := "*/5 * * * * *"
-		message1 := "{\"type\":\"olala1\"}"
-		if err := r.Create(tx, &scheduler.Schedule{Name: "olala1", Cron: &cron1, Payload: &message1}); err != nil {
+		schedule := scheduler.Schedule{
+			Name: "olala1",
+			Cron: &cron1,
+			Func: "sendEmails",
+			Args: map[string]any{"type": "welcome"},
+		}
+		if err := r.Create(tx, &schedule); err != nil {
 			return err
 		}
 

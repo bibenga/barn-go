@@ -64,9 +64,10 @@ func main() {
 
 		cron1 := "*/5 * * * * *"
 		schedule := scheduler.Schedule{
-			Name:    "sendNotifications",
-			Cron:    &cron1,
-			Payload: map[string]any{"type": "welcome"},
+			Name: "sendNotifications",
+			Cron: &cron1,
+			Func: "sendNotifications",
+			Args: map[string]any{"type": "welcome"},
 		}
 		if err := pgSchedulerRepository.Create(tx, &schedule); err != nil {
 			return err
@@ -94,8 +95,8 @@ func main() {
 		Repository: schedulerRepository,
 		Handler: func(tx *sql.Tx, s *scheduler.Schedule) error {
 			var payload map[string]interface{}
-			if s.Payload != nil {
-				payload = s.Payload.(map[string]interface{})
+			if s.Args != nil {
+				payload = s.Args.(map[string]interface{})
 			} else {
 				payload = make(map[string]interface{})
 			}
