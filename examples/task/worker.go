@@ -19,10 +19,10 @@ func main() {
 	db := examples.InitDb(false)
 	defer db.Close()
 
-	repository := task.NewPostgresQueueRepository()
+	repository := task.NewPostgresTaskRepository()
 
 	err := barngo.RunInTransaction(db, func(tx *sql.Tx) error {
-		r := repository.(*task.PostgresQueueRepository)
+		r := repository.(*task.PostgresTaskRepository)
 		if err := r.CreateTable(tx); err != nil {
 			return err
 		}

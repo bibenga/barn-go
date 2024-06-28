@@ -13,6 +13,7 @@ import (
 	"github.com/bibenga/barn-go/lock"
 	"github.com/bibenga/barn-go/queue"
 	"github.com/bibenga/barn-go/scheduler"
+	"github.com/bibenga/barn-go/task"
 )
 
 func main() {
@@ -23,17 +24,22 @@ func main() {
 
 	lockRepository := lock.NewPostgresLockRepository(
 		lock.LockQueryConfig{
-			TableName: "barn.lock",
+			TableName: "public.lock",
 		},
 	)
 	schedulerRepository := scheduler.NewPostgresSchedulerRepository(
 		scheduler.ScheduleQueryConfig{
-			TableName: "barn.schedule",
+			TableName: "public.schedule",
 		},
 	)
 	queueRepository := queue.NewPostgresQueueRepository(
 		queue.QueueQueryConfig{
-			TableName: "barn.queue",
+			TableName: "public.queue",
+		},
+	)
+	taskRepository := task.NewPostgresTaskRepository(
+		task.TaskQueryConfig{
+			TableName: "public.task",
 		},
 	)
 
@@ -57,13 +63,22 @@ func main() {
 		}
 
 		cron1 := "*/5 * * * * *"
-		payload := map[string]any{"str": "str", "int": 12}
-		if err := pgSchedulerRepository.Create(tx, &scheduler.Schedule{Name: "olala1", Cron: &cron1, Payload: payload}); err != nil {
+		schedule := scheduler.Schedule{
+			Name:    "sendNotifications",
+			Cron:    &cron1,
+			Payload: map[string]any{"type": "welcome"},
+		}
+		if err := pgSchedulerRepository.Create(tx, &schedule); err != nil {
 			return err
 		}
 
 		pgQueueRepository := queueRepository.(*queue.PostgresQueueRepository)
 		if err := pgQueueRepository.CreateTable(tx); err != nil {
+			return err
+		}
+
+		pgTaskRepository := taskRepository.(*task.PostgresTaskRepository)
+		if err := pgTaskRepository.CreateTable(tx); err != nil {
 			return err
 		}
 
@@ -88,10 +103,22 @@ func main() {
 				"schedule": s.Name,
 				"moment":   s.NextRunAt,
 			}
-			return queueRepository.Create(tx, &queue.Message{
+			err := queueRepository.Create(tx, &queue.Message{
 				CreatedAt: *s.NextRunAt,
 				Payload:   payload,
 			})
+			if err != nil {
+				return err
+			}
+			err = taskRepository.Create(tx, &task.Task{
+				CreatedAt: *s.NextRunAt,
+				Func:      "sendNotifications",
+				Args:      payload,
+			})
+			if err != nil {
+				return err
+			}
+			return nil
 		},
 	})
 
@@ -114,9 +141,9 @@ func main() {
 
 	leader.StartContext(ctx)
 
-	worker := queue.NewWorker(db, &queue.WorkerConfig{
-		Repository: queueRepository,
-		Cron:       "*/5 * * * * *",
+	worker := task.NewWorker(db, &task.WorkerConfig{
+		Repository: taskRepository,
+		Cron:       "* * * * *",
 	})
 	worker.StartContext(ctx)
 

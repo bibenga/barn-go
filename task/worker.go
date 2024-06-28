@@ -41,7 +41,7 @@ func NewWorker(db *sql.DB, config *WorkerConfig) *Worker {
 		panic(errors.New("config is nil"))
 	}
 	if config.Repository == nil {
-		config.Repository = NewPostgresQueueRepository()
+		config.Repository = NewPostgresTaskRepository()
 		// or just panic?
 		// panic(errors.New("repository is nil"))
 	}

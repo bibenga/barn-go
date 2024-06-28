@@ -8,25 +8,25 @@ import (
 	"time"
 )
 
-type PostgresQueueRepository struct {
+type PostgresTaskRepository struct {
 	config TaskQueryConfig
 }
 
-func NewPostgresQueueRepository(config ...TaskQueryConfig) TaskRepository {
+func NewPostgresTaskRepository(config ...TaskQueryConfig) TaskRepository {
 	var c *TaskQueryConfig
 	if len(config) > 0 {
 		c = &config[0]
 	} else {
 		c = &TaskQueryConfig{}
 	}
-	r := &PostgresQueueRepository{
+	r := &PostgresTaskRepository{
 		config: *c,
 	}
 	r.setupDefaults()
 	return r
 }
 
-func (r *PostgresQueueRepository) setupDefaults() {
+func (r *PostgresTaskRepository) setupDefaults() {
 	c := &r.config
 	if c.TableName == "" {
 		c.TableName = DefaultTableName
@@ -63,7 +63,7 @@ func (r *PostgresQueueRepository) setupDefaults() {
 	}
 }
 
-func (r *PostgresQueueRepository) CreateTable(tx *sql.Tx) error {
+func (r *PostgresTaskRepository) CreateTable(tx *sql.Tx) error {
 	c := &r.config
 	_, err := tx.Exec(
 		fmt.Sprintf(
@@ -107,7 +107,7 @@ func (r *PostgresQueueRepository) CreateTable(tx *sql.Tx) error {
 	return err
 }
 
-func (r *PostgresQueueRepository) FindNext(tx *sql.Tx) (*Task, error) {
+func (r *PostgresTaskRepository) FindNext(tx *sql.Tx) (*Task, error) {
 	c := &r.config
 	stmt, err := tx.Prepare(
 		fmt.Sprintf(
@@ -151,7 +151,7 @@ func (r *PostgresQueueRepository) FindNext(tx *sql.Tx) (*Task, error) {
 	return &t, nil
 }
 
-func (r *PostgresQueueRepository) Create(tx *sql.Tx, t *Task) error {
+func (r *PostgresTaskRepository) Create(tx *sql.Tx, t *Task) error {
 	c := &r.config
 	if t.CreatedAt.IsZero() {
 		t.CreatedAt = time.Now().UTC()
@@ -183,7 +183,7 @@ func (r *PostgresQueueRepository) Create(tx *sql.Tx, t *Task) error {
 	return err
 }
 
-func (r *PostgresQueueRepository) Save(tx *sql.Tx, t *Task) error {
+func (r *PostgresTaskRepository) Save(tx *sql.Tx, t *Task) error {
 	c := &r.config
 	res, err := tx.Exec(
 		fmt.Sprintf(
@@ -210,7 +210,7 @@ func (r *PostgresQueueRepository) Save(tx *sql.Tx, t *Task) error {
 	return nil
 }
 
-func (r *PostgresQueueRepository) DeleteOld(tx *sql.Tx, moment time.Time) (int, error) {
+func (r *PostgresTaskRepository) DeleteOld(tx *sql.Tx, moment time.Time) (int, error) {
 	c := &r.config
 	res, err := tx.Exec(
 		fmt.Sprintf(
@@ -231,7 +231,7 @@ func (r *PostgresQueueRepository) DeleteOld(tx *sql.Tx, moment time.Time) (int, 
 	}
 }
 
-func (r *PostgresQueueRepository) DeleteAll(tx *sql.Tx) error {
+func (r *PostgresTaskRepository) DeleteAll(tx *sql.Tx) error {
 	c := &r.config
 	_, err := tx.Exec(
 		fmt.Sprintf(
@@ -242,4 +242,4 @@ func (r *PostgresQueueRepository) DeleteAll(tx *sql.Tx) error {
 	return err
 }
 
-var _ TaskRepository = &PostgresQueueRepository{}
+var _ TaskRepository = &PostgresTaskRepository{}
