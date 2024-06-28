@@ -2,6 +2,7 @@ package task
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -128,10 +129,22 @@ func (r *PostgresQueueRepository) FindNext(tx *sql.Tx) (*Task, error) {
 	defer stmt.Close()
 	var t Task
 	row := stmt.QueryRow()
-	if err := row.Scan(&t.Id, &t.CreatedAt, &t.Func, &t.Args, &t.IsProcessed, &t.StartedAt, &t.FinishedAt, &t.IsSuccess, &t.Result, &t.Error); err != nil {
+	var args []byte
+	var result []byte
+	if err := row.Scan(&t.Id, &t.CreatedAt, &t.Func, &args, &t.IsProcessed, &t.StartedAt, &t.FinishedAt, &t.IsSuccess, &result, &t.Error); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
 		} else {
+			return nil, err
+		}
+	}
+	if args != nil {
+		if err := json.Unmarshal(args, &t.Args); err != nil {
+			return nil, err
+		}
+	}
+	if result != nil {
+		if err := json.Unmarshal(result, &t.Result); err != nil {
 			return nil, err
 		}
 	}
@@ -140,6 +153,14 @@ func (r *PostgresQueueRepository) FindNext(tx *sql.Tx) (*Task, error) {
 
 func (r *PostgresQueueRepository) Create(tx *sql.Tx, m *Task) error {
 	c := &r.config
+	args, err := json.Marshal(m.Args)
+	if err != nil {
+		return err
+	}
+	result, err := json.Marshal(m.Result)
+	if err != nil {
+		return err
+	}
 	stmt, err := tx.Prepare(
 		fmt.Sprintf(
 			`insert into %s(%s, %s, %s, %s, %s, %s, %s, %s, %s) 
@@ -155,7 +176,7 @@ func (r *PostgresQueueRepository) Create(tx *sql.Tx, m *Task) error {
 	}
 	defer stmt.Close()
 
-	err = stmt.QueryRow(&m.CreatedAt, &m.Func, &m.Args, &m.IsProcessed, &m.StartedAt, &m.FinishedAt, &m.IsSuccess, &m.Result, &m.Error).Scan(&m.Id)
+	err = stmt.QueryRow(m.CreatedAt, m.Func, args, m.IsProcessed, m.StartedAt, m.FinishedAt, m.IsSuccess, result, m.Error).Scan(&m.Id)
 	return err
 }
 

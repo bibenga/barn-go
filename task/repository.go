@@ -40,12 +40,12 @@ type Task struct {
 	Id          int
 	CreatedAt   time.Time
 	Func        string
-	Args        string
+	Args        any
 	IsProcessed bool
 	StartedAt   *time.Time
 	FinishedAt  *time.Time
 	IsSuccess   *bool
-	Result      *string
+	Result      any
 	Error       *string
 }
 
@@ -54,7 +54,7 @@ func (e Task) LogValue() slog.Value {
 	args = append(args, slog.Int("Id", e.Id))
 	args = append(args, slog.Time("CreatedAt", e.CreatedAt))
 	args = append(args, slog.String("Func", e.Func))
-	args = append(args, slog.String("Args", e.Args))
+	args = append(args, slog.Any("Args", e.Args))
 	args = append(args, slog.Bool("IsProcessed", e.IsProcessed))
 	if e.StartedAt == nil {
 		args = append(args, slog.Any("StartedAt", nil))
@@ -71,11 +71,7 @@ func (e Task) LogValue() slog.Value {
 	} else {
 		args = append(args, slog.Bool("IsSuccess", *e.IsSuccess))
 	}
-	if e.Result == nil {
-		args = append(args, slog.Any("Result", nil))
-	} else {
-		args = append(args, slog.String("Result", *e.Result))
-	}
+	args = append(args, slog.Any("Result", e.Result))
 	if e.Error == nil {
 		args = append(args, slog.Any("Error", nil))
 	} else {

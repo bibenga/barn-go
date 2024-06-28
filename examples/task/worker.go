@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -31,13 +30,13 @@ func main() {
 			return err
 		}
 
-		payload1, err := json.Marshal(map[string]any{"str": "str", "int": 12})
-		if err != nil {
-			return err
-		}
+		// payload1, err := json.Marshal(map[string]any{"str": "str", "int": 12})
+		// if err != nil {
+		// return err
+		// }
 		task1 := task.Task{
 			Func:      "sentEmail",
-			Args:      string(payload1),
+			Args:      map[string]any{"str": "str", "int": 12},
 			CreatedAt: time.Now().UTC(),
 		}
 		if err := r.Create(tx, &task1); err != nil {
