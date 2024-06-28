@@ -36,7 +36,6 @@ func main() {
 			return err
 		}
 		message1 := queue.Message{
-			Name:      "olala1",
 			Payload:   string(payload1),
 			CreatedAt: time.Now().UTC(),
 		}

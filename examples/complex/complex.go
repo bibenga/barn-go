@@ -103,7 +103,6 @@ func main() {
 			}
 			return queueRepository.Create(tx, &queue.Message{
 				CreatedAt: *s.NextRunAt,
-				Name:      s.Name,
 				Payload:   string(spayload),
 			})
 		},

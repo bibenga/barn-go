@@ -1,4 +1,4 @@
-package queue
+package task
 
 import (
 	"context"
@@ -102,9 +102,7 @@ func (s *Worker) run(ctx context.Context) {
 
 	defer s.stoped.Done()
 
-	if err := s.process(); err != nil {
-		panic(err)
-	}
+	s.process()
 
 	for {
 		nextTs, err := gronx.NextTick(s.cron, false)
@@ -123,6 +121,9 @@ func (s *Worker) run(ctx context.Context) {
 			if err := s.process(); err != nil {
 				panic(err)
 			}
+			if err := s.deleteOld(); err != nil {
+				panic(err)
+			}
 		}
 	}
 }
@@ -139,13 +140,27 @@ func (s *Worker) process() error {
 				return sql.ErrNoRows
 			}
 			s.log.Info("process message", "message", message)
+			if message.IsProcessed {
+				return errors.New("codebug: message is processed")
+			}
 			if err := s.handler(tx, message); err != nil {
 				s.log.Error("the message is processed with error", "error", err)
+				now := time.Now().UTC()
+				success := false
+				message.IsProcessed = true
+				message.ProcessedAt = &now
+				message.IsSuccess = &success
+				errorMessage := err.Error()
+				message.Error = &errorMessage
 			} else {
-				s.log.Error("the message is processed")
+				now := time.Now().UTC()
+				success := true
+				message.IsProcessed = true
+				message.ProcessedAt = &now
+				message.IsSuccess = &success
 			}
 			s.log.Debug("save message", "message", message)
-			if err := s.repository.Delete(tx, message); err != nil {
+			if err := s.repository.Save(tx, message); err != nil {
 				return err
 			}
 			return nil
@@ -157,6 +172,16 @@ func (s *Worker) process() error {
 			return err
 		}
 	}
+}
+
+func (s *Worker) deleteOld() error {
+	s.log.Debug("deleteOld")
+	return barngo.RunInTransaction(s.db, func(tx *sql.Tx) error {
+		m := time.Now().UTC().Add(-30 * 24 * time.Hour)
+		deleted, err := s.repository.DeleteOld(tx, m)
+		s.log.Debug("the old messages is deleted", "count", deleted)
+		return err
+	})
 }
 
 func dummyMessageHandler(tx *sql.Tx, message *Message) error {

@@ -1,4 +1,4 @@
-package queue
+package task
 
 import (
 	"database/sql"
@@ -36,8 +36,23 @@ func (r *PostgresQueueRepository) setupDefaults() {
 	if c.CreatedAtField == "" {
 		c.CreatedAtField = DefaultCreatedAtField
 	}
+	if c.NameField == "" {
+		c.NameField = DefaultNameField
+	}
 	if c.PayloadField == "" {
 		c.PayloadField = DefaultPayloadField
+	}
+	if c.IsProcessedField == "" {
+		c.IsProcessedField = DefaultIsProcessedField
+	}
+	if c.ProcessedAtField == "" {
+		c.ProcessedAtField = DefaultProcessedAtField
+	}
+	if c.IsSuccessField == "" {
+		c.IsSuccessField = DefaultIsSuccessField
+	}
+	if c.ErrorField == "" {
+		c.ErrorField = DefaultErrorField
 	}
 }
 
@@ -48,13 +63,23 @@ func (r *PostgresQueueRepository) CreateTable(tx *sql.Tx) error {
 			`create table if not exists %s (
 				%s serial not null, 
 				%s timestamp with time zone not null, 
+				%s varchar not null, 
 				%s jsonb not null, 
+				%s boolean default false not null, 
+				%s timestamp with time zone, 
+				%s boolean, 
+				%s varchar, 
 				primary key (%s)
 			)`,
 			c.TableName,
 			c.IdField,
 			c.CreatedAtField,
+			c.NameField,
 			c.PayloadField,
+			c.IsProcessedField,
+			c.ProcessedAtField,
+			c.IsSuccessField,
+			c.ErrorField,
 			c.IdField,
 		),
 	)
@@ -75,13 +100,15 @@ func (r *PostgresQueueRepository) FindNext(tx *sql.Tx) (*Message, error) {
 	c := &r.config
 	stmt, err := tx.Prepare(
 		fmt.Sprintf(
-			`select %s, %s, %s
+			`select %s, %s, %s, %s, %s, %s, %s, %s
 			from %s
+			where not %s
 			order by %s
 			limit 1
 			for update skip locked`,
-			c.IdField, c.CreatedAtField, c.PayloadField,
+			c.IdField, c.CreatedAtField, c.NameField, c.PayloadField, c.IsProcessedField, c.ProcessedAtField, c.IsSuccessField, c.ErrorField,
 			c.TableName,
+			c.IsProcessedField,
 			c.CreatedAtField,
 		),
 	)
@@ -91,7 +118,7 @@ func (r *PostgresQueueRepository) FindNext(tx *sql.Tx) (*Message, error) {
 	defer stmt.Close()
 	var m Message
 	row := stmt.QueryRow()
-	if err := row.Scan(&m.Id, &m.CreatedAt, &m.Payload); err != nil {
+	if err := row.Scan(&m.Id, &m.CreatedAt, &m.Name, &m.Payload, &m.IsProcessed, &m.ProcessedAt, &m.IsSuccess, &m.Error); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
 		} else {
@@ -101,58 +128,15 @@ func (r *PostgresQueueRepository) FindNext(tx *sql.Tx) (*Message, error) {
 	return &m, nil
 }
 
-func (r *PostgresQueueRepository) FindManyNext(tx *sql.Tx, limit int) ([]*Message, error) {
-	c := &r.config
-	stmt, err := tx.Prepare(
-		fmt.Sprintf(
-			`select %s, %s, %s
-			from %s
-			order by %s
-			limit 1
-			for update skip locked`,
-			c.IdField, c.CreatedAtField, c.PayloadField,
-			c.TableName,
-			c.CreatedAtField,
-		),
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer stmt.Close()
-
-	rows, err := stmt.Query(limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var messages []*Message
-	for rows.Next() {
-		var m Message
-		if err := rows.Scan(&m.Id, &m.CreatedAt, &m.Payload); err != nil {
-			return nil, err
-		}
-		messages = append(messages, &m)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
-	return messages, nil
-}
-
 func (r *PostgresQueueRepository) Create(tx *sql.Tx, m *Message) error {
-	if m.CreatedAt.IsZero() {
-		m.CreatedAt = time.Now().UTC()
-	}
 	c := &r.config
 	stmt, err := tx.Prepare(
 		fmt.Sprintf(
-			`insert into %s(%s, %s) 
-			values ($1, $2) 
+			`insert into %s(%s, %s, %s, %s, %s, %s, %s) 
+			values ($1, $2, $3, $4, $5, $6, $7) 
 			returning %s`,
 			c.TableName,
-			c.CreatedAtField, c.PayloadField,
+			c.CreatedAtField, c.NameField, c.PayloadField, c.IsProcessedField, c.ProcessedAtField, c.IsSuccessField, c.ErrorField,
 			c.IdField,
 		),
 	)
@@ -161,19 +145,22 @@ func (r *PostgresQueueRepository) Create(tx *sql.Tx, m *Message) error {
 	}
 	defer stmt.Close()
 
-	err = stmt.QueryRow(&m.CreatedAt, &m.Payload).Scan(&m.Id)
+	err = stmt.QueryRow(&m.CreatedAt, &m.Name, &m.Payload, &m.IsProcessed, &m.ProcessedAt, &m.IsSuccess, &m.Error).Scan(&m.Id)
 	return err
 }
 
-func (r *PostgresQueueRepository) Delete(tx *sql.Tx, m *Message) error {
+func (r *PostgresQueueRepository) Save(tx *sql.Tx, m *Message) error {
 	c := &r.config
 	res, err := tx.Exec(
 		fmt.Sprintf(
-			`delete from %s 
-			where %s=$1`,
+			`update %s 
+			set %s=$1, %s=$2, %s=$3, %s=$4
+			where %s=$5`,
 			c.TableName,
+			c.IsProcessedField, c.ProcessedAtField, c.IsSuccessField, c.ErrorField,
 			c.IdField,
 		),
+		m.IsProcessed, m.ProcessedAt, m.IsSuccess, m.Error,
 		m.Id,
 	)
 	if err != nil {
@@ -185,7 +172,28 @@ func (r *PostgresQueueRepository) Delete(tx *sql.Tx, m *Message) error {
 		if rowsAffected == 0 {
 			return sql.ErrNoRows
 		}
-		return nil
+	}
+	return nil
+}
+
+func (r *PostgresQueueRepository) DeleteOld(tx *sql.Tx, moment time.Time) (int, error) {
+	c := &r.config
+	res, err := tx.Exec(
+		fmt.Sprintf(
+			`delete from %s 
+			where %s and %s<=$1`,
+			c.TableName,
+			c.IsProcessedField, c.CreatedAtField,
+		),
+		moment,
+	)
+	if err != nil {
+		return 0, err
+	}
+	if rowsAffected, err := res.RowsAffected(); err != nil {
+		return 0, err
+	} else {
+		return int(rowsAffected), nil
 	}
 }
 
