@@ -8,15 +8,15 @@ import (
 )
 
 type PostgresQueueRepository struct {
-	config QueueQueryConfig
+	config TaskQueryConfig
 }
 
-func NewPostgresQueueRepository(config ...QueueQueryConfig) QueueRepository {
-	var c *QueueQueryConfig
+func NewPostgresQueueRepository(config ...TaskQueryConfig) TaskRepository {
+	var c *TaskQueryConfig
 	if len(config) > 0 {
 		c = &config[0]
 	} else {
-		c = &QueueQueryConfig{}
+		c = &TaskQueryConfig{}
 	}
 	r := &PostgresQueueRepository{
 		config: *c,
@@ -36,20 +36,26 @@ func (r *PostgresQueueRepository) setupDefaults() {
 	if c.CreatedAtField == "" {
 		c.CreatedAtField = DefaultCreatedAtField
 	}
-	if c.NameField == "" {
-		c.NameField = DefaultNameField
+	if c.FuncField == "" {
+		c.FuncField = DefaultFuncField
 	}
-	if c.PayloadField == "" {
-		c.PayloadField = DefaultPayloadField
+	if c.ArgsField == "" {
+		c.ArgsField = DefaultArgsField
 	}
 	if c.IsProcessedField == "" {
 		c.IsProcessedField = DefaultIsProcessedField
 	}
-	if c.ProcessedAtField == "" {
-		c.ProcessedAtField = DefaultProcessedAtField
+	if c.StartedAtField == "" {
+		c.StartedAtField = DefaultStartedAtField
+	}
+	if c.FinishedAtField == "" {
+		c.FinishedAtField = DefaultFinishedAtField
 	}
 	if c.IsSuccessField == "" {
 		c.IsSuccessField = DefaultIsSuccessField
+	}
+	if c.ResultField == "" {
+		c.ResultField = DefaultResultField
 	}
 	if c.ErrorField == "" {
 		c.ErrorField = DefaultErrorField
@@ -67,19 +73,23 @@ func (r *PostgresQueueRepository) CreateTable(tx *sql.Tx) error {
 				%s jsonb not null, 
 				%s boolean default false not null, 
 				%s timestamp with time zone, 
+				%s timestamp with time zone, 
 				%s boolean, 
+				%s varchar, 
 				%s varchar, 
 				primary key (%s)
 			)`,
 			c.TableName,
 			c.IdField,
 			c.CreatedAtField,
-			c.NameField,
-			c.PayloadField,
+			c.FuncField,
+			c.ArgsField,
 			c.IsProcessedField,
-			c.ProcessedAtField,
+			c.StartedAtField,
+			c.FinishedAtField,
 			c.IsSuccessField,
 			c.ErrorField,
+			c.ResultField,
 			c.IdField,
 		),
 	)
@@ -96,17 +106,17 @@ func (r *PostgresQueueRepository) CreateTable(tx *sql.Tx) error {
 	return err
 }
 
-func (r *PostgresQueueRepository) FindNext(tx *sql.Tx) (*Message, error) {
+func (r *PostgresQueueRepository) FindNext(tx *sql.Tx) (*Task, error) {
 	c := &r.config
 	stmt, err := tx.Prepare(
 		fmt.Sprintf(
-			`select %s, %s, %s, %s, %s, %s, %s, %s
+			`select %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
 			from %s
 			where not %s
 			order by %s
 			limit 1
 			for update skip locked`,
-			c.IdField, c.CreatedAtField, c.NameField, c.PayloadField, c.IsProcessedField, c.ProcessedAtField, c.IsSuccessField, c.ErrorField,
+			c.IdField, c.CreatedAtField, c.FuncField, c.ArgsField, c.IsProcessedField, c.StartedAtField, c.FinishedAtField, c.IsSuccessField, c.ResultField, c.ErrorField,
 			c.TableName,
 			c.IsProcessedField,
 			c.CreatedAtField,
@@ -116,27 +126,27 @@ func (r *PostgresQueueRepository) FindNext(tx *sql.Tx) (*Message, error) {
 		return nil, err
 	}
 	defer stmt.Close()
-	var m Message
+	var t Task
 	row := stmt.QueryRow()
-	if err := row.Scan(&m.Id, &m.CreatedAt, &m.Name, &m.Payload, &m.IsProcessed, &m.ProcessedAt, &m.IsSuccess, &m.Error); err != nil {
+	if err := row.Scan(&t.Id, &t.CreatedAt, &t.Func, &t.Args, &t.IsProcessed, &t.StartedAt, &t.FinishedAt, &t.IsSuccess, &t.Result, &t.Error); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
 		} else {
 			return nil, err
 		}
 	}
-	return &m, nil
+	return &t, nil
 }
 
-func (r *PostgresQueueRepository) Create(tx *sql.Tx, m *Message) error {
+func (r *PostgresQueueRepository) Create(tx *sql.Tx, m *Task) error {
 	c := &r.config
 	stmt, err := tx.Prepare(
 		fmt.Sprintf(
-			`insert into %s(%s, %s, %s, %s, %s, %s, %s) 
-			values ($1, $2, $3, $4, $5, $6, $7) 
+			`insert into %s(%s, %s, %s, %s, %s, %s, %s, %s, %s) 
+			values ($1, $2, $3, $4, $5, $6, $7, $8, $9) 
 			returning %s`,
 			c.TableName,
-			c.CreatedAtField, c.NameField, c.PayloadField, c.IsProcessedField, c.ProcessedAtField, c.IsSuccessField, c.ErrorField,
+			c.CreatedAtField, c.FuncField, c.ArgsField, c.IsProcessedField, c.StartedAtField, c.FinishedAtField, c.IsSuccessField, c.ResultField, c.ErrorField,
 			c.IdField,
 		),
 	)
@@ -145,23 +155,23 @@ func (r *PostgresQueueRepository) Create(tx *sql.Tx, m *Message) error {
 	}
 	defer stmt.Close()
 
-	err = stmt.QueryRow(&m.CreatedAt, &m.Name, &m.Payload, &m.IsProcessed, &m.ProcessedAt, &m.IsSuccess, &m.Error).Scan(&m.Id)
+	err = stmt.QueryRow(&m.CreatedAt, &m.Func, &m.Args, &m.IsProcessed, &m.StartedAt, &m.FinishedAt, &m.IsSuccess, &m.Result, &m.Error).Scan(&m.Id)
 	return err
 }
 
-func (r *PostgresQueueRepository) Save(tx *sql.Tx, m *Message) error {
+func (r *PostgresQueueRepository) Save(tx *sql.Tx, t *Task) error {
 	c := &r.config
 	res, err := tx.Exec(
 		fmt.Sprintf(
 			`update %s 
-			set %s=$1, %s=$2, %s=$3, %s=$4
-			where %s=$5`,
+			set %s=$1, %s=$2, %s=$3, %s=$4, %s=$5, %s=$6
+			where %s=$7`,
 			c.TableName,
-			c.IsProcessedField, c.ProcessedAtField, c.IsSuccessField, c.ErrorField,
+			c.IsProcessedField, c.StartedAtField, c.FinishedAtField, c.IsSuccessField, c.ResultField, c.ErrorField,
 			c.IdField,
 		),
-		m.IsProcessed, m.ProcessedAt, m.IsSuccess, m.Error,
-		m.Id,
+		t.IsProcessed, t.StartedAt, t.FinishedAt, t.IsSuccess, t.Result, t.Error,
+		t.Id,
 	)
 	if err != nil {
 		return err
@@ -208,4 +218,4 @@ func (r *PostgresQueueRepository) DeleteAll(tx *sql.Tx) error {
 	return err
 }
 
-var _ QueueRepository = &PostgresQueueRepository{}
+var _ TaskRepository = &PostgresQueueRepository{}

@@ -6,55 +6,75 @@ import (
 	"time"
 )
 
+type Status uint8
+
+const ()
+
 const DefaultTableName = "barn_task"
 const DefaultIdField = "id"
 const DefaultCreatedAtField = "created_at"
-const DefaultNameField = "name"
-const DefaultPayloadField = "payload"
+const DefaultFuncField = "func"
+const DefaultArgsField = "args"
 const DefaultIsProcessedField = "is_processed"
-const DefaultProcessedAtField = "processed_at"
+const DefaultStartedAtField = "started_at"
+const DefaultFinishedAtField = "finished_at"
 const DefaultIsSuccessField = "is_success_flg"
+const DefaultResultField = "result"
 const DefaultErrorField = "error"
 
-type QueueQueryConfig struct {
+type TaskQueryConfig struct {
 	TableName        string
 	IdField          string
 	CreatedAtField   string
-	NameField        string
-	PayloadField     string
+	FuncField        string
+	ArgsField        string
 	IsProcessedField string
-	ProcessedAtField string
+	StartedAtField   string
+	FinishedAtField  string
 	IsSuccessField   string
+	ResultField      string
 	ErrorField       string
 }
 
-type Message struct {
+type Task struct {
 	Id          int
 	CreatedAt   time.Time
-	Name        string
-	Payload     string
+	Func        string
+	Args        string
 	IsProcessed bool
-	ProcessedAt *time.Time
+	StartedAt   *time.Time
+	FinishedAt  *time.Time
 	IsSuccess   *bool
+	Result      *string
 	Error       *string
 }
 
-func (e Message) LogValue() slog.Value {
+func (e Task) LogValue() slog.Value {
 	var args []slog.Attr
 	args = append(args, slog.Int("Id", e.Id))
 	args = append(args, slog.Time("CreatedAt", e.CreatedAt))
-	args = append(args, slog.String("Name", e.Name))
-	args = append(args, slog.String("Payload", e.Payload))
+	args = append(args, slog.String("Func", e.Func))
+	args = append(args, slog.String("Args", e.Args))
 	args = append(args, slog.Bool("IsProcessed", e.IsProcessed))
-	if e.ProcessedAt == nil {
-		args = append(args, slog.Any("ProcessedAt", nil))
+	if e.StartedAt == nil {
+		args = append(args, slog.Any("StartedAt", nil))
 	} else {
-		args = append(args, slog.Time("ProcessedAt", *e.ProcessedAt))
+		args = append(args, slog.Time("StartedAt", *e.StartedAt))
+	}
+	if e.FinishedAt == nil {
+		args = append(args, slog.Any("FinishedAt", nil))
+	} else {
+		args = append(args, slog.Time("FinishedAt", *e.FinishedAt))
 	}
 	if e.IsSuccess == nil {
 		args = append(args, slog.Any("IsSuccess", nil))
 	} else {
 		args = append(args, slog.Bool("IsSuccess", *e.IsSuccess))
+	}
+	if e.Result == nil {
+		args = append(args, slog.Any("Result", nil))
+	} else {
+		args = append(args, slog.String("Result", *e.Result))
 	}
 	if e.Error == nil {
 		args = append(args, slog.Any("Error", nil))
@@ -64,9 +84,9 @@ func (e Message) LogValue() slog.Value {
 	return slog.GroupValue(args...)
 }
 
-type QueueRepository interface {
-	FindNext(tx *sql.Tx) (*Message, error)
-	Create(tx *sql.Tx, task *Message) error
-	Save(tx *sql.Tx, task *Message) error
+type TaskRepository interface {
+	FindNext(tx *sql.Tx) (*Task, error)
+	Create(tx *sql.Tx, task *Task) error
+	Save(tx *sql.Tx, task *Task) error
 	DeleteOld(tx *sql.Tx, t time.Time) (int, error)
 }
