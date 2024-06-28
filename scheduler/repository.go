@@ -13,7 +13,7 @@ const DefaultIsActiveField = "is_active"
 const DefaultCronField = "cron"
 const DefaultNextRunAtField = "next_run_at"
 const DefaultLastRunAtField = "last_run_at"
-const DefaultMessageField = "message"
+const DefaultPayloadField = "payload"
 
 type ScheduleQueryConfig struct {
 	TableName      string
@@ -23,7 +23,7 @@ type ScheduleQueryConfig struct {
 	CronField      string
 	NextRunAtField string
 	LastRunAtField string
-	MessageField   string
+	PayloadField   string
 }
 
 type Schedule struct {
@@ -33,7 +33,7 @@ type Schedule struct {
 	Cron      *string
 	NextRunAt *time.Time
 	LastRunAt *time.Time
-	Message   *string
+	Payload   any
 }
 
 func (e Schedule) LogValue() slog.Value {
@@ -56,11 +56,7 @@ func (e Schedule) LogValue() slog.Value {
 	} else {
 		args = append(args, slog.Time("LastRunAt", *e.LastRunAt))
 	}
-	if e.Message == nil {
-		args = append(args, slog.Any("Message", nil))
-	} else {
-		args = append(args, slog.String("Message", *e.Message))
-	}
+	args = append(args, slog.Any("Message", e.Payload))
 	return slog.GroupValue(args...)
 }
 

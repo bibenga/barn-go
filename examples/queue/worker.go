@@ -3,11 +3,9 @@ package main
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"log/slog"
 	"os"
 	"os/signal"
-	"time"
 
 	barngo "github.com/bibenga/barn-go"
 	"github.com/bibenga/barn-go/examples"
@@ -31,13 +29,8 @@ func main() {
 			return err
 		}
 
-		payload1, err := json.Marshal(map[string]any{"str": "str", "int": 12})
-		if err != nil {
-			return err
-		}
 		message1 := queue.Message{
-			Payload:   string(payload1),
-			CreatedAt: time.Now().UTC(),
+			Payload: map[string]any{"str": "str", "int": 12},
 		}
 		if err := r.Create(tx, &message1); err != nil {
 			return err

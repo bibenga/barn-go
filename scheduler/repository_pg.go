@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"time"
 )
@@ -52,8 +53,8 @@ func (r *PostgresSchedulerRepository) setupDefaults() {
 	if c.LastRunAtField == "" {
 		c.LastRunAtField = DefaultLastRunAtField
 	}
-	if c.MessageField == "" {
-		c.MessageField = DefaultMessageField
+	if c.PayloadField == "" {
+		c.PayloadField = DefaultPayloadField
 	}
 }
 
@@ -79,7 +80,7 @@ func (r *PostgresSchedulerRepository) CreateTable(tx *sql.Tx) error {
 			c.CronField,
 			c.NextRunAtField,
 			c.LastRunAtField,
-			c.MessageField,
+			c.PayloadField,
 			c.IdField,
 			c.NameField,
 		),
@@ -95,7 +96,7 @@ func (r *PostgresSchedulerRepository) FindAllActive(tx *sql.Tx) ([]*Schedule, er
 			from %s
 			where %s
 			for update`,
-			c.IdField, c.NameField, c.IsActiveField, c.CronField, c.NextRunAtField, c.LastRunAtField, c.MessageField,
+			c.IdField, c.NameField, c.IsActiveField, c.CronField, c.NextRunAtField, c.LastRunAtField, c.PayloadField,
 			c.TableName,
 			c.IsActiveField,
 		),
@@ -114,9 +115,15 @@ func (r *PostgresSchedulerRepository) FindAllActive(tx *sql.Tx) ([]*Schedule, er
 	var schedules []*Schedule
 	for rows.Next() {
 		var s Schedule = Schedule{}
-		err := rows.Scan(&s.Id, &s.Name, &s.IsActive, &s.Cron, &s.NextRunAt, &s.LastRunAt, &s.Message)
+		var payload []byte
+		err := rows.Scan(&s.Id, &s.Name, &s.IsActive, &s.Cron, &s.NextRunAt, &s.LastRunAt, &payload)
 		if err != nil {
 			return nil, err
+		}
+		if payload != nil {
+			if err := json.Unmarshal(payload, &s.Payload); err != nil {
+				return nil, err
+			}
 		}
 		schedules = append(schedules, &s)
 	}
@@ -136,7 +143,7 @@ func (r *PostgresSchedulerRepository) FindAllActiveAndUnprocessed(tx *sql.Tx, mo
 			order by %s
 			limit $2
 			for update`,
-			c.IdField, c.NameField, c.IsActiveField, c.CronField, c.NextRunAtField, c.LastRunAtField, c.MessageField,
+			c.IdField, c.NameField, c.IsActiveField, c.CronField, c.NextRunAtField, c.LastRunAtField, c.PayloadField,
 			c.TableName,
 			c.IsActiveField, c.NextRunAtField, c.NextRunAtField,
 			c.NextRunAtField,
@@ -156,9 +163,15 @@ func (r *PostgresSchedulerRepository) FindAllActiveAndUnprocessed(tx *sql.Tx, mo
 	var schedules []*Schedule
 	for rows.Next() {
 		var s Schedule = Schedule{}
-		err := rows.Scan(&s.Id, &s.Name, &s.IsActive, &s.Cron, &s.NextRunAt, &s.LastRunAt, &s.Message)
+		var payload []byte
+		err := rows.Scan(&s.Id, &s.Name, &s.IsActive, &s.Cron, &s.NextRunAt, &s.LastRunAt, &payload)
 		if err != nil {
 			return nil, err
+		}
+		if payload != nil {
+			if err := json.Unmarshal(payload, &s.Payload); err != nil {
+				return nil, err
+			}
 		}
 		schedules = append(schedules, &s)
 	}
@@ -176,7 +189,7 @@ func (r *PostgresSchedulerRepository) FindOne(tx *sql.Tx, pk int) (*Schedule, er
 			from %s
 			where %s and %s=$1
 			for update`,
-			c.IdField, c.NameField, c.IsActiveField, c.CronField, c.NextRunAtField, c.LastRunAtField, c.MessageField,
+			c.IdField, c.NameField, c.IsActiveField, c.CronField, c.NextRunAtField, c.LastRunAtField, c.PayloadField,
 			c.TableName,
 			c.IsActiveField, c.IdField,
 		),
@@ -187,11 +200,17 @@ func (r *PostgresSchedulerRepository) FindOne(tx *sql.Tx, pk int) (*Schedule, er
 	defer stmt.Close()
 
 	var s Schedule
+	var payload []byte
 	row := stmt.QueryRow(pk)
-	if err := row.Scan(&s.Id, &s.Name, &s.IsActive, &s.Cron, &s.NextRunAt, &s.LastRunAt, &s.Message); err != nil {
+	if err := row.Scan(&s.Id, &s.Name, &s.IsActive, &s.Cron, &s.NextRunAt, &s.LastRunAt, &payload); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
 		} else {
+			return nil, err
+		}
+	}
+	if payload != nil {
+		if err := json.Unmarshal(payload, &s.Payload); err != nil {
 			return nil, err
 		}
 	}
@@ -199,18 +218,21 @@ func (r *PostgresSchedulerRepository) FindOne(tx *sql.Tx, pk int) (*Schedule, er
 }
 
 func (r *PostgresSchedulerRepository) Create(tx *sql.Tx, s *Schedule) error {
+	c := &r.config
 	if s.Cron == nil && s.NextRunAt == nil {
 		return fmt.Errorf("invalid cron and/or nextTs	")
 	}
-
-	c := &r.config
+	payload, err := json.Marshal(s.Payload)
+	if err != nil {
+		return err
+	}
 	stmt, err := tx.Prepare(
 		fmt.Sprintf(
 			`insert into %s(%s, %s, %s, %s) 
 			values ($1, $2, $3, $4) 
 			returning %s`,
 			c.TableName,
-			c.NameField, c.CronField, c.NextRunAtField, c.MessageField,
+			c.NameField, c.CronField, c.NextRunAtField, c.PayloadField,
 			c.IdField,
 		),
 	)
@@ -219,7 +241,7 @@ func (r *PostgresSchedulerRepository) Create(tx *sql.Tx, s *Schedule) error {
 	}
 	defer stmt.Close()
 
-	err = stmt.QueryRow(s.Name, s.Cron, s.NextRunAt, s.Message).Scan(&s.Id)
+	err = stmt.QueryRow(s.Name, s.Cron, s.NextRunAt, payload).Scan(&s.Id)
 	return err
 }
 

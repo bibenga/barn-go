@@ -3,7 +3,6 @@ package scheduler
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"log/slog"
 	"math"
@@ -280,22 +279,6 @@ func (s *Scheduler) processTask(schedule *Schedule) error {
 }
 
 func dummySchedulerHandler(tx *sql.Tx, s *Schedule) error {
-	var payload map[string]interface{}
-	if s.Message != nil {
-		if err := json.Unmarshal([]byte(*s.Message), &payload); err != nil {
-			return err
-		}
-	} else {
-		payload = make(map[string]interface{})
-	}
-	meta := make(map[string]interface{})
-	meta["name"] = s.Name
-	meta["moment"] = s.NextRunAt
-	payload["_meta"] = meta
-	if encodedPayload, err := json.Marshal(payload); err != nil {
-		return err
-	} else {
-		slog.Info("DUMMY: process", "payload", string(encodedPayload))
-	}
+	slog.Debug("DUMMY: process", "schedule", s)
 	return nil
 }

@@ -128,9 +128,9 @@ func (r *PostgresQueueRepository) FindNext(tx *sql.Tx) (*Task, error) {
 	}
 	defer stmt.Close()
 	var t Task
-	row := stmt.QueryRow()
 	var args []byte
 	var result []byte
+	row := stmt.QueryRow()
 	if err := row.Scan(&t.Id, &t.CreatedAt, &t.Func, &args, &t.IsProcessed, &t.StartedAt, &t.FinishedAt, &t.IsSuccess, &result, &t.Error); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
@@ -151,13 +151,16 @@ func (r *PostgresQueueRepository) FindNext(tx *sql.Tx) (*Task, error) {
 	return &t, nil
 }
 
-func (r *PostgresQueueRepository) Create(tx *sql.Tx, m *Task) error {
+func (r *PostgresQueueRepository) Create(tx *sql.Tx, t *Task) error {
 	c := &r.config
-	args, err := json.Marshal(m.Args)
+	if t.CreatedAt.IsZero() {
+		t.CreatedAt = time.Now().UTC()
+	}
+	args, err := json.Marshal(t.Args)
 	if err != nil {
 		return err
 	}
-	result, err := json.Marshal(m.Result)
+	result, err := json.Marshal(t.Result)
 	if err != nil {
 		return err
 	}
@@ -176,7 +179,7 @@ func (r *PostgresQueueRepository) Create(tx *sql.Tx, m *Task) error {
 	}
 	defer stmt.Close()
 
-	err = stmt.QueryRow(m.CreatedAt, m.Func, args, m.IsProcessed, m.StartedAt, m.FinishedAt, m.IsSuccess, result, m.Error).Scan(&m.Id)
+	err = stmt.QueryRow(t.CreatedAt, t.Func, args, t.IsProcessed, t.StartedAt, t.FinishedAt, t.IsSuccess, result, t.Error).Scan(&t.Id)
 	return err
 }
 

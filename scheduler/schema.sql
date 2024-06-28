@@ -5,7 +5,7 @@ create table if not exists barn_schedule (
     cron varchar, 
     next_run_ts timestamp with time zone, 
     last_run_ts timestamp with time zone, 
-    message jsonb, 
+    payload jsonb, 
     primary key (id),
     unique (name)
 );

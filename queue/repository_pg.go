@@ -2,6 +2,7 @@ package queue
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -90,62 +91,32 @@ func (r *PostgresQueueRepository) FindNext(tx *sql.Tx) (*Message, error) {
 	}
 	defer stmt.Close()
 	var m Message
+	var payload []byte
 	row := stmt.QueryRow()
-	if err := row.Scan(&m.Id, &m.CreatedAt, &m.Payload); err != nil {
+	if err := row.Scan(&m.Id, &m.CreatedAt, &payload); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
 		} else {
 			return nil, err
 		}
 	}
+	if payload != nil {
+		if err := json.Unmarshal(payload, &m.Payload); err != nil {
+			return nil, err
+		}
+	}
 	return &m, nil
 }
 
-func (r *PostgresQueueRepository) FindManyNext(tx *sql.Tx, limit int) ([]*Message, error) {
-	c := &r.config
-	stmt, err := tx.Prepare(
-		fmt.Sprintf(
-			`select %s, %s, %s
-			from %s
-			order by %s
-			limit 1
-			for update skip locked`,
-			c.IdField, c.CreatedAtField, c.PayloadField,
-			c.TableName,
-			c.CreatedAtField,
-		),
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer stmt.Close()
-
-	rows, err := stmt.Query(limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var messages []*Message
-	for rows.Next() {
-		var m Message
-		if err := rows.Scan(&m.Id, &m.CreatedAt, &m.Payload); err != nil {
-			return nil, err
-		}
-		messages = append(messages, &m)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
-	return messages, nil
-}
-
 func (r *PostgresQueueRepository) Create(tx *sql.Tx, m *Message) error {
+	c := &r.config
 	if m.CreatedAt.IsZero() {
 		m.CreatedAt = time.Now().UTC()
 	}
-	c := &r.config
+	payload, err := json.Marshal(m.Payload)
+	if err != nil {
+		return err
+	}
 	stmt, err := tx.Prepare(
 		fmt.Sprintf(
 			`insert into %s(%s, %s) 
@@ -161,7 +132,7 @@ func (r *PostgresQueueRepository) Create(tx *sql.Tx, m *Message) error {
 	}
 	defer stmt.Close()
 
-	err = stmt.QueryRow(&m.CreatedAt, &m.Payload).Scan(&m.Id)
+	err = stmt.QueryRow(m.CreatedAt, payload).Scan(&m.Id)
 	return err
 }
 

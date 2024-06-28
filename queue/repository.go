@@ -21,7 +21,7 @@ type QueueQueryConfig struct {
 type Message struct {
 	Id        int
 	CreatedAt time.Time
-	Payload   string
+	Payload   any
 }
 
 func (e Message) LogValue() slog.Value {
@@ -34,7 +34,6 @@ func (e Message) LogValue() slog.Value {
 
 type QueueRepository interface {
 	FindNext(tx *sql.Tx) (*Message, error)
-	FindManyNext(tx *sql.Tx, limit int) ([]*Message, error)
 	Create(tx *sql.Tx, message *Message) error
 	Delete(tx *sql.Tx, message *Message) error
 }

@@ -30,7 +30,7 @@ func main() {
 
 		cron1 := "*/5 * * * * *"
 		message1 := "{\"type\":\"olala1\"}"
-		if err := r.Create(tx, &scheduler.Schedule{Name: "olala1", Cron: &cron1, Message: &message1}); err != nil {
+		if err := r.Create(tx, &scheduler.Schedule{Name: "olala1", Cron: &cron1, Payload: &message1}); err != nil {
 			return err
 		}
 		return nil

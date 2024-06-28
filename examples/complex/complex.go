@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -58,16 +57,10 @@ func main() {
 		}
 
 		cron1 := "*/5 * * * * *"
-		message1 := "{\"type\":\"olala1\"}"
-		if err := pgSchedulerRepository.Create(tx, &scheduler.Schedule{Name: "olala1", Cron: &cron1, Message: &message1}); err != nil {
+		payload := map[string]any{"str": "str", "int": 12}
+		if err := pgSchedulerRepository.Create(tx, &scheduler.Schedule{Name: "olala1", Cron: &cron1, Payload: payload}); err != nil {
 			return err
 		}
-
-		// cron2 := "*/5 * * * * *"
-		// nextTs2 := time.Now().UTC().Add(-20 * time.Second)
-		// if err := r.Create(tx, &scheduler.Schedule{Name: "olala2", Cron: &cron2, NextTs: &nextTs2}); err != nil {
-		// 	return err
-		// }
 
 		pgQueueRepository := queueRepository.(*queue.PostgresQueueRepository)
 		if err := pgQueueRepository.CreateTable(tx); err != nil {
@@ -86,10 +79,8 @@ func main() {
 		Repository: schedulerRepository,
 		Handler: func(tx *sql.Tx, s *scheduler.Schedule) error {
 			var payload map[string]interface{}
-			if s.Message != nil {
-				if err := json.Unmarshal([]byte(*s.Message), &payload); err != nil {
-					return err
-				}
+			if s.Payload != nil {
+				payload = s.Payload.(map[string]interface{})
 			} else {
 				payload = make(map[string]interface{})
 			}
@@ -97,13 +88,9 @@ func main() {
 				"schedule": s.Name,
 				"moment":   s.NextRunAt,
 			}
-			spayload, err := json.Marshal(payload)
-			if err != nil {
-				return err
-			}
 			return queueRepository.Create(tx, &queue.Message{
 				CreatedAt: *s.NextRunAt,
-				Payload:   string(spayload),
+				Payload:   payload,
 			})
 		},
 	})
