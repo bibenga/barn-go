@@ -1,11 +1,13 @@
 create table if not exists barn_task (
     id serial not null, 
     created_ts timestamp with time zone not null, 
-    name varchar not null,
-    payload jsonb not null, 
-    is_processed_flg boolean default false not null, 
-    processed_ts timestamp with time zone, 
+    func varchar not null,
+    args jsonb not null, 
+    is_processed boolean default false not null, 
+    started_at timestamp with time zone, 
+    finished_at timestamp with time zone, 
     is_success_flg boolean, 
+    result jsonb, 
     error varchar, 
     primary key (id)
 );
