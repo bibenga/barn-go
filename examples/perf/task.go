@@ -7,13 +7,13 @@ import (
 
 	barngo "github.com/bibenga/barn-go"
 	"github.com/bibenga/barn-go/examples"
-	"github.com/bibenga/barn-go/queue"
+	"github.com/bibenga/barn-go/task"
 )
 
 const count = 1000
 const progress = 100
 
-func insert(db *sql.DB, repository queue.QueueRepository) {
+func insert(db *sql.DB, repository task.TaskRepository) {
 	started := time.Now().UTC()
 	for i := 0; i < count; i++ {
 		if progress > 0 {
@@ -23,9 +23,10 @@ func insert(db *sql.DB, repository queue.QueueRepository) {
 		}
 		err := barngo.RunInTransaction(db, func(tx *sql.Tx) error {
 			created := time.Now().UTC()
-			m := queue.Message{
+			m := task.Task{
 				CreatedAt: created,
-				Payload:   map[string]any{"created": created, "i": i},
+				Func:      "sendEmails",
+				Args:      map[string]any{"created": created, "i": i},
 			}
 			if err := repository.Create(tx, &m); err != nil {
 				panic(err)
@@ -41,7 +42,7 @@ func insert(db *sql.DB, repository queue.QueueRepository) {
 	slog.Info("insert", "duration", d, "n/s", float64(count)/d.Seconds())
 }
 
-func process(db *sql.DB, repository queue.QueueRepository) {
+func process(db *sql.DB, repository task.TaskRepository) {
 	started := time.Now().UTC()
 	i := 0
 	for {
@@ -51,15 +52,16 @@ func process(db *sql.DB, repository queue.QueueRepository) {
 			}
 		}
 		err := barngo.RunInTransaction(db, func(tx *sql.Tx) error {
-			m, err := repository.FindNext(tx)
+			t, err := repository.FindNext(tx)
 			if err != nil {
 				return err
 			}
-			if m == nil {
+			if t == nil {
 				return sql.ErrNoRows
 			}
 			i++
-			if err := repository.Delete(tx, m); err != nil {
+			t.IsProcessed = true
+			if err := repository.Save(tx, t); err != nil {
 				return err
 			}
 			return nil
@@ -82,10 +84,10 @@ func main() {
 	db := examples.InitDb(false)
 	defer db.Close()
 
-	repository := queue.NewPostgresQueueRepository()
+	repository := task.NewPostgresTaskRepository()
 
 	err := barngo.RunInTransaction(db, func(tx *sql.Tx) error {
-		r := repository.(*queue.PostgresQueueRepository)
+		r := repository.(*task.PostgresTaskRepository)
 		if err := r.CreateTable(tx); err != nil {
 			return err
 		}

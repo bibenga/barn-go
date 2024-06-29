@@ -11,7 +11,6 @@ import (
 	barngo "github.com/bibenga/barn-go"
 	"github.com/bibenga/barn-go/examples"
 	"github.com/bibenga/barn-go/lock"
-	"github.com/bibenga/barn-go/queue"
 	"github.com/bibenga/barn-go/scheduler"
 	"github.com/bibenga/barn-go/task"
 )
@@ -30,11 +29,6 @@ func main() {
 	schedulerRepository := scheduler.NewPostgresSchedulerRepository(
 		scheduler.ScheduleQueryConfig{
 			TableName: "public.schedule",
-		},
-	)
-	queueRepository := queue.NewPostgresQueueRepository(
-		queue.QueueQueryConfig{
-			TableName: "public.queue",
 		},
 	)
 	taskRepository := task.NewPostgresTaskRepository(
@@ -73,11 +67,6 @@ func main() {
 			return err
 		}
 
-		pgQueueRepository := queueRepository.(*queue.PostgresQueueRepository)
-		if err := pgQueueRepository.CreateTable(tx); err != nil {
-			return err
-		}
-
 		pgTaskRepository := taskRepository.(*task.PostgresTaskRepository)
 		if err := pgTaskRepository.CreateTable(tx); err != nil {
 			return err
@@ -103,13 +92,6 @@ func main() {
 			payload["_meta"] = map[string]interface{}{
 				"schedule": s.Name,
 				"moment":   s.NextRunAt,
-			}
-			err := queueRepository.Create(tx, &queue.Message{
-				CreatedAt: *s.NextRunAt,
-				Payload:   payload,
-			})
-			if err != nil {
-				return err
 			}
 			err = taskRepository.Create(tx, &task.Task{
 				CreatedAt: *s.NextRunAt,
