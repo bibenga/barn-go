@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"log/slog"
-	"math"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -16,26 +15,33 @@ import (
 
 type SchedulerHandler func(tx *sql.Tx, schedule *Schedule) error
 
+func dummySchedulerHandler(tx *sql.Tx, s *Schedule) error {
+	slog.Debug("DUMMY: process", "schedule", s)
+	return nil
+}
+
+var _ SchedulerHandler = dummySchedulerHandler
+
 type SchedulerConfig struct {
 	Log        *slog.Logger
 	Repository SchedulerRepository
-	ReloadCron string
+	Cron       string
 	Handler    SchedulerHandler
 }
 
 type Scheduler struct {
-	log            *slog.Logger
-	handler        SchedulerHandler
-	db             *sql.DB
-	repository     SchedulerRepository
-	schedules      map[int]*Schedule
-	reloadSchedule Schedule
-	running        atomic.Bool
-	cancel         context.CancelFunc
-	stoped         sync.WaitGroup
+	log        *slog.Logger
+	handler    SchedulerHandler
+	db         *sql.DB
+	repository SchedulerRepository
+	running    atomic.Bool
+	cancel     context.CancelFunc
+	stoped     sync.WaitGroup
+	cron       string
+	nextTs     time.Time
 }
 
-func NewScheduler(db *sql.DB, config *SchedulerConfig) *Scheduler {
+func NewSimpleScheduler(db *sql.DB, config *SchedulerConfig) *Scheduler {
 	if db == nil {
 		panic(errors.New("db is nil"))
 	}
@@ -44,13 +50,11 @@ func NewScheduler(db *sql.DB, config *SchedulerConfig) *Scheduler {
 	}
 	if config.Repository == nil {
 		config.Repository = NewPostgresSchedulerRepository()
-		// or just panic?
-		// panic(errors.New("repository is nil"))
 	}
-	if config.ReloadCron == "" {
-		config.ReloadCron = "*/5 * * * *"
+	if config.Cron == "" {
+		config.Cron = "* * * * *"
 	} else {
-		if _, err := gronx.NextTick(config.ReloadCron, false); err != nil {
+		if _, err := gronx.NextTick(config.Cron, false); err != nil {
 			panic(err)
 		}
 	}
@@ -65,13 +69,7 @@ func NewScheduler(db *sql.DB, config *SchedulerConfig) *Scheduler {
 		handler:    config.Handler,
 		db:         db,
 		repository: config.Repository,
-		schedules:  make(map[int]*Schedule),
-		reloadSchedule: Schedule{
-			Id:       math.MinInt,
-			Name:     "<reload>",
-			IsActive: true,
-			Cron:     &config.ReloadCron,
-		},
+		cron:       config.Cron,
 	}
 	return &scheduler
 }
@@ -91,6 +89,10 @@ func (s *Scheduler) StartContext(ctx context.Context) {
 }
 
 func (s *Scheduler) Stop() {
+	if !s.running.Load() {
+		panic(errors.New("is not running"))
+	}
+
 	s.log.Debug("Stopping")
 	s.cancel()
 	s.stoped.Wait()
@@ -98,9 +100,9 @@ func (s *Scheduler) Stop() {
 }
 
 func (s *Scheduler) run(ctx context.Context) {
-	s.log.Debug("scheduler is stated")
+	s.log.Debug("scheduler stated")
 	defer func() {
-		s.log.Debug("scheduler is stopped")
+		s.log.Debug("scheduler terminated")
 	}()
 
 	s.running.Store(true)
@@ -110,161 +112,55 @@ func (s *Scheduler) run(ctx context.Context) {
 
 	defer s.stoped.Done()
 
-	if err := s.reload(); err != nil {
-		s.log.Error("cannot load schedules", "error", err)
+	if nextTs, err := gronx.NextTick(s.cron, true); err != nil {
 		panic(err)
+	} else {
+		s.nextTs = nextTs
 	}
 
 	for {
-		schedule := s.getNext()
-		d := time.Until(*schedule.NextRunAt)
-		s.log.Debug("next fire time", "time", *schedule.NextRunAt, "duration", d)
+		s.log.Info("next event time", "NextTs", s.nextTs)
+		d := time.Until(s.nextTs)
 		timer := time.NewTimer(d)
 		defer timer.Stop()
+
 		select {
 		case <-ctx.Done():
-			s.log.Debug("terminate")
-			clear(s.schedules)
+			s.log.Info("terminate")
 			return
 		case <-timer.C:
-			if schedule == &s.reloadSchedule {
-				if err := s.reload(); err != nil {
-					s.log.Error("cannot load schedules", "error", err)
-					panic(err)
-				}
+			if err := s.processTasks(); err != nil {
+				panic(err)
+			}
+
+			if nextTs, err := gronx.NextTick(s.cron, false); err != nil {
+				panic(err)
 			} else {
-				if err := s.processSchedule(schedule); err != nil {
-					s.log.Error("cannot process task", "schedule", schedule, "error", err)
-				}
+				s.nextTs = nextTs
 			}
 		}
 	}
 }
 
-func (s *Scheduler) reload() error {
-	s.log.Debug("reload schdules")
+func (s *Scheduler) processTasks() error {
+	s.log.Info("process")
 
-	if s.reloadSchedule.NextRunAt == nil {
-		if nextTs, err := gronx.NextTick(*s.reloadSchedule.Cron, false); err != nil {
-			return err
-		} else {
-			s.reloadSchedule.NextRunAt = &nextTs
-		}
-	}
-
-	loaded := make(map[int]*Schedule)
 	err := barngo.RunInTransaction(s.db, func(tx *sql.Tx) error {
-		schedules, err := s.repository.FindAllActive(tx)
+		schedules, err := s.repository.FindAllActiveAndUnprocessed(tx, time.Now().UTC())
 		if err != nil {
 			return err
 		}
+		s.log.Debug("the schedules is loaded", "count", len(schedules))
 		for _, dbSchedule := range schedules {
-			s.log.Info("process schedule", "schedule", dbSchedule)
-			if !dbSchedule.IsActive {
-				s.log.Debug("the schedule is not active", "schedule", dbSchedule)
-				continue
-			} else if dbSchedule.NextRunAt == nil && dbSchedule.Cron == nil {
+			s.log.Info("process the schedule", "schedule", dbSchedule)
+			if dbSchedule.NextRunAt == nil && dbSchedule.Cron == nil {
 				s.log.Debug("the schedule is not valid")
 				dbSchedule.IsActive = false
 				if err := s.repository.Save(tx, dbSchedule); err != nil {
 					return err
 				}
 				continue
-			} else if dbSchedule.NextRunAt == nil {
-				if nextTs, err := gronx.NextTick(*dbSchedule.Cron, true); err != nil {
-					s.log.Info("the schedule has an invalid cron expression", "error", err)
-					dbSchedule.IsActive = false
-					if err := s.repository.Save(tx, dbSchedule); err != nil {
-						return err
-					}
-				} else {
-					dbSchedule.NextRunAt = &nextTs
-					s.log.Debug("update next fire time", "NextTs", *dbSchedule.NextRunAt)
-					if err := s.repository.Save(tx, dbSchedule); err != nil {
-						return err
-					}
-				}
 			}
-			loaded[dbSchedule.Id] = dbSchedule
-		}
-		return nil
-	})
-	if err != nil {
-		return err
-	}
-
-	current := s.schedules
-	for id := range loaded {
-		if _, ok := current[id]; ok {
-			s.log.Debug("updated schedule", "schedule", id)
-		} else {
-			s.log.Debug("added schedule", "schedule", id)
-		}
-	}
-	for id := range current {
-		if _, ok := loaded[id]; !ok {
-			s.log.Debug("deleted schedule", "schedule", id)
-		}
-	}
-	s.schedules = loaded
-
-	return nil
-}
-
-func (s *Scheduler) getNext() *Schedule {
-	// yes, we should use heap, but I'm lazy
-	var next *Schedule = &s.reloadSchedule
-	for _, s := range s.schedules {
-		if s.NextRunAt.Before(*next.NextRunAt) {
-			next = s
-		}
-	}
-	s.log.Debug("next schedule", "schedule", next)
-	return next
-}
-
-func (s *Scheduler) processSchedule(schedule *Schedule) error {
-	if schedule == nil {
-		return errors.New("code bug: schedule is nil")
-	}
-	s.log.Info("process the schedule", "schedule", schedule)
-	return barngo.RunInTransaction(s.db, func(tx *sql.Tx) error {
-		dbSchedule, err := s.repository.FindOne(tx, schedule.Id)
-		if err != nil {
-			return err
-		}
-		if dbSchedule == nil {
-			s.log.Info("the schedule is not found")
-			delete(s.schedules, schedule.Id)
-			return nil
-		}
-		s.log.Info("loaded state from db", "schedule", dbSchedule)
-		s.schedules[dbSchedule.Id] = dbSchedule
-		if dbSchedule.NextRunAt == nil && dbSchedule.Cron == nil {
-			s.log.Info("the schedule is not valid", "schedule", schedule.Id)
-			dbSchedule.IsActive = false
-			if err := s.repository.Save(tx, dbSchedule); err != nil {
-				return err
-			}
-			delete(s.schedules, schedule.Id)
-			return nil
-		}
-		if dbSchedule.NextRunAt == nil {
-			if nextTs, err := gronx.NextTick(*dbSchedule.Cron, false); err != nil {
-				s.log.Info("the schedule has an invalid cron expression", "error", err)
-				dbSchedule.IsActive = false
-				dbSchedule.LastRunAt = dbSchedule.NextRunAt
-				if err := s.repository.Save(tx, dbSchedule); err != nil {
-					return err
-				}
-				s.schedules[dbSchedule.Id] = dbSchedule
-				return nil
-			} else {
-				s.log.Info("the schedule is planned", "time", nextTs)
-				dbSchedule.NextRunAt = &nextTs
-			}
-		}
-		if dbSchedule.NextRunAt.Equal(*schedule.NextRunAt) || dbSchedule.NextRunAt.Before(*schedule.NextRunAt) {
 			if err := s.handler(tx, dbSchedule); err != nil {
 				s.log.Error("the schedule processed with error", "error", err)
 			}
@@ -286,14 +182,8 @@ func (s *Scheduler) processSchedule(schedule *Schedule) error {
 			if err := s.repository.Save(tx, dbSchedule); err != nil {
 				return err
 			}
-		} else {
-			s.log.Info("schedule is changed and will be rescheduled")
 		}
 		return nil
 	})
-}
-
-func dummySchedulerHandler(tx *sql.Tx, s *Schedule) error {
-	slog.Debug("DUMMY: process", "schedule", s)
-	return nil
+	return err
 }

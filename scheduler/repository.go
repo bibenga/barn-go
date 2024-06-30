@@ -65,15 +65,8 @@ func (e Schedule) LogValue() slog.Value {
 }
 
 type SchedulerRepository interface {
-	FindAllActive(tx *sql.Tx) ([]*Schedule, error)
-	FindOne(tx *sql.Tx, pk int) (*Schedule, error)
-	Save(tx *sql.Tx, s *Schedule) error
-	Delete(tx *sql.Tx, pk int) error
-}
-
-type SimpleSchedulerRepository interface {
 	FindAllActiveAndUnprocessed(tx *sql.Tx, moment time.Time) ([]*Schedule, error)
-	FindOne(tx *sql.Tx, pk int) (*Schedule, error)
+	// FindOne(tx *sql.Tx, pk int) (*Schedule, error)
 	Save(tx *sql.Tx, s *Schedule) error
 	Delete(tx *sql.Tx, pk int) error
 }

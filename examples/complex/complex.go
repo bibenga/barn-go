@@ -10,7 +10,6 @@ import (
 
 	barngo "github.com/bibenga/barn-go"
 	"github.com/bibenga/barn-go/examples"
-	"github.com/bibenga/barn-go/lock"
 	"github.com/bibenga/barn-go/scheduler"
 	"github.com/bibenga/barn-go/task"
 )
@@ -21,11 +20,6 @@ func main() {
 	db := examples.InitDb(false)
 	defer db.Close()
 
-	lockRepository := lock.NewPostgresLockRepository(
-		lock.LockQueryConfig{
-			TableName: "public.lock",
-		},
-	)
 	schedulerRepository := scheduler.NewPostgresSchedulerRepository(
 		scheduler.ScheduleQueryConfig{
 			TableName: "public.schedule",
@@ -36,16 +30,11 @@ func main() {
 			TableName: "public.task",
 		},
 	)
-	registry := task.NewRegistry()
+	registry := task.NewTaskRegistry()
 
 	err := barngo.RunInTransaction(db, func(tx *sql.Tx) error {
 		_, err := tx.Exec(`create schema if not exists barn`)
 		if err != nil {
-			return err
-		}
-
-		pgLockRepository := lockRepository.(*lock.PostgresLockRepository)
-		if err := pgLockRepository.CreateTable(tx); err != nil {
 			return err
 		}
 
@@ -93,39 +82,16 @@ func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	scheduler := scheduler.NewScheduler(db, &scheduler.SchedulerConfig{
+	scheduler := scheduler.NewSimpleScheduler(db, &scheduler.SchedulerConfig{
 		Repository: schedulerRepository,
 		Handler: func(tx *sql.Tx, s *scheduler.Schedule) error {
-			err = taskRepository.Create(tx, &task.Task{
+			return taskRepository.Create(tx, &task.Task{
 				CreatedAt: *s.NextRunAt,
 				Func:      s.Func,
 				Args:      s.Args,
 			})
-			if err != nil {
-				return err
-			}
-			return nil
 		},
 	})
-
-	electorLock := lock.NewLockWithConfig(db, &lock.LockerConfig{
-		Repository: lockRepository,
-		Ttl:        10 * time.Second,
-		Hearbeat:   1 * time.Second,
-	})
-	elector := lock.NewLeaderElector(&lock.LeaderElectorConfig{
-		Lock: electorLock,
-		Handler: func(leader bool) error {
-			if leader {
-				scheduler.StartContext(ctx)
-			} else {
-				scheduler.Stop()
-			}
-			return nil
-		},
-	})
-
-	elector.StartContext(ctx)
 
 	worker := task.NewWorker(db, &task.WorkerConfig{
 		Repository: taskRepository,
@@ -149,7 +115,6 @@ func main() {
 	cancel()
 	time.Sleep(1 * time.Second)
 
-	elector.Stop()
 	scheduler.Stop()
 	worker.Stop()
 }

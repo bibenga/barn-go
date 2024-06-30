@@ -19,7 +19,6 @@ func main() {
 	defer db.Close()
 
 	repository := scheduler.NewPostgresSchedulerRepository()
-
 	err := barngo.RunInTransaction(db, func(tx *sql.Tx) error {
 		r := repository.(*scheduler.PostgresSchedulerRepository)
 		if err := r.CreateTable(tx); err != nil {
@@ -39,13 +38,6 @@ func main() {
 		if err := r.Create(tx, &schedule); err != nil {
 			return err
 		}
-
-		// cron2 := "*/5 * * * * *"
-		// nextTs2 := time.Now().UTC().Add(-20 * time.Second)
-		// if err := r.Create(tx, &scheduler.Schedule{Name: "olala2", Cron: &cron2, NextTs: &nextTs2}); err != nil {
-		// 	return err
-		// }
-
 		return nil
 	})
 	if err != nil {
@@ -54,7 +46,7 @@ func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	scheduler := scheduler.NewScheduler(db, &scheduler.SchedulerConfig{Repository: repository})
+	scheduler := scheduler.NewSimpleScheduler(db, &scheduler.SchedulerConfig{Repository: repository})
 	scheduler.StartContext(ctx)
 
 	osSignal := make(chan os.Signal, 1)
@@ -63,6 +55,5 @@ func main() {
 	slog.Info("os signal received", "signal", s)
 
 	cancel()
-
 	scheduler.Stop()
 }

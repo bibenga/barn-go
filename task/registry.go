@@ -9,25 +9,25 @@ import (
 
 type TaskFunc func(tx *sql.Tx, args any) (any, error)
 
-type Registry struct {
+type TaskRegistry struct {
 	funcs map[string]TaskFunc
 }
 
-func NewRegistry() *Registry {
-	return &Registry{
+func NewTaskRegistry() *TaskRegistry {
+	return &TaskRegistry{
 		funcs: make(map[string]TaskFunc),
 	}
 }
 
-func (r *Registry) Register(name string, f TaskFunc) {
+func (r *TaskRegistry) Register(name string, f TaskFunc) {
 	r.funcs[name] = f
 }
 
-func (r *Registry) Unregister(name string) {
+func (r *TaskRegistry) Unregister(name string) {
 	delete(r.funcs, name)
 }
 
-func (r *Registry) Call(tx *sql.Tx, name string, args any) (any, error) {
+func (r *TaskRegistry) Call(tx *sql.Tx, name string, args any) (any, error) {
 	// ctx := context.WithValue(context.Background(), "tx", tx)
 	f, ok := r.funcs[name]
 	if !ok {
@@ -36,7 +36,15 @@ func (r *Registry) Call(tx *sql.Tx, name string, args any) (any, error) {
 	return f(tx, args)
 }
 
-func (r *Registry) Delay(tx *sql.Tx, name string, args any, countdown *int, eta *time.Time) error {
+func (r *TaskRegistry) Delay(tx *sql.Tx, name string, args any, countdown *int, eta *time.Time) error {
+	_, ok := r.funcs[name]
+	if !ok {
+		return fmt.Errorf("the function '%s' is not found", name)
+	}
+	return errors.New("not implemented")
+}
+
+func (r *TaskRegistry) ApplyAsync(tx *sql.Tx, name string, args any, countdown *int, eta *time.Time) error {
 	_, ok := r.funcs[name]
 	if !ok {
 		return fmt.Errorf("the function '%s' is not found", name)
