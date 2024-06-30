@@ -185,6 +185,10 @@ func (r *PostgresTaskRepository) Create(tx *sql.Tx, t *Task) error {
 
 func (r *PostgresTaskRepository) Save(tx *sql.Tx, t *Task) error {
 	c := &r.config
+	result, err := json.Marshal(t.Result)
+	if err != nil {
+		return err
+	}
 	res, err := tx.Exec(
 		fmt.Sprintf(
 			`update %s 
@@ -194,7 +198,7 @@ func (r *PostgresTaskRepository) Save(tx *sql.Tx, t *Task) error {
 			c.IsProcessedField, c.StartedAtField, c.FinishedAtField, c.IsSuccessField, c.ResultField, c.ErrorField,
 			c.IdField,
 		),
-		t.IsProcessed, t.StartedAt, t.FinishedAt, t.IsSuccess, t.Result, t.Error,
+		t.IsProcessed, t.StartedAt, t.FinishedAt, t.IsSuccess, result, t.Error,
 		t.Id,
 	)
 	if err != nil {

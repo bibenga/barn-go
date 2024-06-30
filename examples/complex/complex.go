@@ -78,25 +78,20 @@ func main() {
 		panic(err)
 	}
 
+	task.Register("sendNotifications", func(tx *sql.Tx, args any) (any, error) {
+		slog.Info("CALLED: sendNotifications", "args", args)
+		return true, nil
+	})
+
 	ctx, cancel := context.WithCancel(context.Background())
 
 	scheduler := scheduler.NewScheduler(db, &scheduler.SchedulerConfig{
 		Repository: schedulerRepository,
 		Handler: func(tx *sql.Tx, s *scheduler.Schedule) error {
-			var payload map[string]interface{}
-			if s.Args != nil {
-				payload = s.Args.(map[string]interface{})
-			} else {
-				payload = make(map[string]interface{})
-			}
-			payload["_meta"] = map[string]interface{}{
-				"schedule": s.Name,
-				"moment":   s.NextRunAt,
-			}
 			err = taskRepository.Create(tx, &task.Task{
 				CreatedAt: *s.NextRunAt,
-				Func:      "sendNotifications",
-				Args:      payload,
+				Func:      s.Func,
+				Args:      s.Args,
 			})
 			if err != nil {
 				return err
@@ -105,13 +100,13 @@ func main() {
 		},
 	})
 
-	leaderLock := lock.NewLockWithConfig(db, &lock.LockerConfig{
+	electorLock := lock.NewLockWithConfig(db, &lock.LockerConfig{
 		Repository: lockRepository,
 		Ttl:        10 * time.Second,
 		Hearbeat:   1 * time.Second,
 	})
-	leader := lock.NewLeaderElector(&lock.LeaderElectorConfig{
-		Lock: leaderLock,
+	elector := lock.NewLeaderElector(&lock.LeaderElectorConfig{
+		Lock: electorLock,
 		Handler: func(leader bool) error {
 			if leader {
 				scheduler.StartContext(ctx)
@@ -122,11 +117,19 @@ func main() {
 		},
 	})
 
-	leader.StartContext(ctx)
+	elector.StartContext(ctx)
 
 	worker := task.NewWorker(db, &task.WorkerConfig{
 		Repository: taskRepository,
-		Cron:       "* * * * *",
+		Cron:       "*/10 * * * * *",
+		Handler: func(tx *sql.Tx, t *task.Task) error {
+			result, err := task.Call(tx, t.Func, t.Args)
+			if err != nil {
+				return err
+			}
+			t.Result = result
+			return nil
+		},
 	})
 	worker.StartContext(ctx)
 
@@ -138,7 +141,7 @@ func main() {
 	cancel()
 	time.Sleep(1 * time.Second)
 
-	leader.Stop()
+	elector.Stop()
 	scheduler.Stop()
 	worker.Stop()
 }

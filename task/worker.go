@@ -132,40 +132,40 @@ func (w *Worker) process() error {
 	w.log.Debug("process")
 	for {
 		err := barngo.RunInTransaction(w.db, func(tx *sql.Tx) error {
-			task, err := w.repository.FindNext(tx)
+			t, err := w.repository.FindNext(tx)
 			if err != nil {
 				return err
 			}
-			if task == nil {
+			if t == nil {
 				return sql.ErrNoRows
 			}
-			w.log.Info("process task", "task", task)
-			if task.IsProcessed {
+			w.log.Info("process task", "task", t)
+			if t.IsProcessed {
 				return errors.New("codebug: task is processed")
 			}
 			startedAt := time.Now().UTC()
-			if err := w.handler(tx, task); err != nil {
+			if err := w.handler(tx, t); err != nil {
 				w.log.Error("the task is processed with error", "error", err)
 				finishedAt := time.Now().UTC()
 				success := false
 				errorMessage := err.Error()
-				task.IsProcessed = true
-				task.StartedAt = &startedAt
-				task.FinishedAt = &finishedAt
-				task.IsSuccess = &success
-				task.Error = &errorMessage
+				t.IsProcessed = true
+				t.StartedAt = &startedAt
+				t.FinishedAt = &finishedAt
+				t.IsSuccess = &success
+				t.Error = &errorMessage
 			} else {
 				w.log.Info("the task is processed with success")
 				finishedAt := time.Now().UTC()
 				success := true
-				task.IsProcessed = true
-				task.StartedAt = &startedAt
-				task.FinishedAt = &finishedAt
-				task.IsSuccess = &success
-				task.Result = nil
+				t.IsProcessed = true
+				t.StartedAt = &startedAt
+				t.FinishedAt = &finishedAt
+				t.IsSuccess = &success
+				// task.Result = nil
 			}
-			w.log.Debug("save task", "task", task)
-			if err := w.repository.Save(tx, task); err != nil {
+			w.log.Debug("save task", "task", t)
+			if err := w.repository.Save(tx, t); err != nil {
 				return err
 			}
 			return nil
@@ -189,7 +189,7 @@ func (w *Worker) deleteOld() error {
 	})
 }
 
-func dummyTaskHandler(tx *sql.Tx, task *Task) error {
-	slog.Info("DUMMY: process", "task", task)
+func dummyTaskHandler(tx *sql.Tx, t *Task) error {
+	slog.Info("DUMMY: process", "task", t)
 	return nil
 }
