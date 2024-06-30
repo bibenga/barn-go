@@ -36,6 +36,7 @@ func main() {
 			TableName: "public.task",
 		},
 	)
+	registry := task.NewRegistry()
 
 	err := barngo.RunInTransaction(db, func(tx *sql.Tx) error {
 		_, err := tx.Exec(`create schema if not exists barn`)
@@ -71,6 +72,13 @@ func main() {
 		if err := pgTaskRepository.CreateTable(tx); err != nil {
 			return err
 		}
+		task := task.Task{
+			Func: "sendNotifications",
+			Args: map[string]any{"type": "started"},
+		}
+		if err := pgTaskRepository.Create(tx, &task); err != nil {
+			return err
+		}
 
 		return nil
 	})
@@ -78,7 +86,7 @@ func main() {
 		panic(err)
 	}
 
-	task.Register("sendNotifications", func(tx *sql.Tx, args any) (any, error) {
+	registry.Register("sendNotifications", func(tx *sql.Tx, args any) (any, error) {
 		slog.Info("CALLED: sendNotifications", "args", args)
 		return true, nil
 	})
@@ -123,7 +131,7 @@ func main() {
 		Repository: taskRepository,
 		Cron:       "*/10 * * * * *",
 		Handler: func(tx *sql.Tx, t *task.Task) error {
-			result, err := task.Call(tx, t.Func, t.Args)
+			result, err := registry.Call(tx, t.Func, t.Args)
 			if err != nil {
 				return err
 			}

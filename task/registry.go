@@ -2,7 +2,9 @@ package task
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
+	"time"
 )
 
 type TaskFunc func(tx *sql.Tx, args any) (any, error)
@@ -34,20 +36,10 @@ func (r *Registry) Call(tx *sql.Tx, name string, args any) (any, error) {
 	return f(tx, args)
 }
 
-var registry = NewRegistry()
-
-func DefaultRegistry() *Registry {
-	return registry
-}
-
-func Register(name string, f TaskFunc) {
-	registry.Register(name, f)
-}
-
-func Unregister(name string) {
-	registry.Unregister(name)
-}
-
-func Call(tx *sql.Tx, name string, args any) (any, error) {
-	return registry.Call(tx, name, args)
+func (r *Registry) Delay(tx *sql.Tx, name string, args any, countdown *int, eta *time.Time) error {
+	_, ok := r.funcs[name]
+	if !ok {
+		return fmt.Errorf("the function '%s' is not found", name)
+	}
+	return errors.New("not implemented")
 }
