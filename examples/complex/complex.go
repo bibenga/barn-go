@@ -92,6 +92,7 @@ func main() {
 			})
 		},
 	})
+	scheduler.StartContext(ctx)
 
 	worker := task.NewWorker(db, &task.WorkerConfig{
 		Repository: taskRepository,
