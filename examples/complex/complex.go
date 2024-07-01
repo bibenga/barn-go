@@ -86,9 +86,9 @@ func main() {
 		Repository: schedulerRepository,
 		Handler: func(tx *sql.Tx, s *scheduler.Schedule) error {
 			return taskRepository.Create(tx, &task.Task{
-				CreatedAt: *s.NextRunAt,
-				Func:      s.Func,
-				Args:      s.Args,
+				RunAt: *s.NextRunAt,
+				Func:  s.Func,
+				Args:  s.Args,
 			})
 		},
 	})

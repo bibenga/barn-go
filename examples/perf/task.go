@@ -24,9 +24,8 @@ func insert(db *sql.DB, repository task.TaskRepository) {
 		err := barngo.RunInTransaction(db, func(tx *sql.Tx) error {
 			created := time.Now().UTC()
 			m := task.Task{
-				CreatedAt: created,
-				Func:      "sendEmails",
-				Args:      map[string]any{"created": created, "i": i},
+				Func: "sendEmails",
+				Args: map[string]any{"created": created, "i": i},
 			}
 			if err := repository.Create(tx, &m); err != nil {
 				panic(err)

@@ -34,8 +34,8 @@ func (r *PostgresTaskRepository) setupDefaults() {
 	if c.IdField == "" {
 		c.IdField = DefaultIdField
 	}
-	if c.CreatedAtField == "" {
-		c.CreatedAtField = DefaultCreatedAtField
+	if c.RunAtField == "" {
+		c.RunAtField = DefaultRunAtField
 	}
 	if c.FuncField == "" {
 		c.FuncField = DefaultFuncField
@@ -82,7 +82,7 @@ func (r *PostgresTaskRepository) CreateTable(tx *sql.Tx) error {
 			)`,
 			c.TableName,
 			c.IdField,
-			c.CreatedAtField,
+			c.RunAtField,
 			c.FuncField,
 			c.ArgsField,
 			c.IsProcessedField,
@@ -101,7 +101,7 @@ func (r *PostgresTaskRepository) CreateTable(tx *sql.Tx) error {
 	_, err = tx.Exec(
 		fmt.Sprintf(
 			`create index if not exists idx_%s_%s on %s (%s)`,
-			strings.ReplaceAll(c.TableName, ".", "_"), c.CreatedAtField, c.TableName, c.CreatedAtField,
+			strings.ReplaceAll(c.TableName, ".", "_"), c.RunAtField, c.TableName, c.RunAtField,
 		),
 	)
 	return err
@@ -113,14 +113,14 @@ func (r *PostgresTaskRepository) FindNext(tx *sql.Tx) (*Task, error) {
 		fmt.Sprintf(
 			`select %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
 			from %s
-			where not %s
+			where not %s and %s < $1
 			order by %s
 			limit 1
 			for update skip locked`,
-			c.IdField, c.CreatedAtField, c.FuncField, c.ArgsField, c.IsProcessedField, c.StartedAtField, c.FinishedAtField, c.IsSuccessField, c.ResultField, c.ErrorField,
+			c.IdField, c.RunAtField, c.FuncField, c.ArgsField, c.IsProcessedField, c.StartedAtField, c.FinishedAtField, c.IsSuccessField, c.ResultField, c.ErrorField,
 			c.TableName,
-			c.IsProcessedField,
-			c.CreatedAtField,
+			c.IsProcessedField, c.RunAtField,
+			c.RunAtField,
 		),
 	)
 	if err != nil {
@@ -130,8 +130,8 @@ func (r *PostgresTaskRepository) FindNext(tx *sql.Tx) (*Task, error) {
 	var t Task
 	var args []byte
 	var result []byte
-	row := stmt.QueryRow()
-	if err := row.Scan(&t.Id, &t.CreatedAt, &t.Func, &args, &t.IsProcessed, &t.StartedAt, &t.FinishedAt, &t.IsSuccess, &result, &t.Error); err != nil {
+	row := stmt.QueryRow(time.Now().UTC())
+	if err := row.Scan(&t.Id, &t.RunAt, &t.Func, &args, &t.IsProcessed, &t.StartedAt, &t.FinishedAt, &t.IsSuccess, &result, &t.Error); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
 		} else {
@@ -153,8 +153,8 @@ func (r *PostgresTaskRepository) FindNext(tx *sql.Tx) (*Task, error) {
 
 func (r *PostgresTaskRepository) Create(tx *sql.Tx, t *Task) error {
 	c := &r.config
-	if t.CreatedAt.IsZero() {
-		t.CreatedAt = time.Now().UTC()
+	if t.RunAt.IsZero() {
+		t.RunAt = time.Now().UTC()
 	}
 	args, err := json.Marshal(t.Args)
 	if err != nil {
@@ -170,7 +170,7 @@ func (r *PostgresTaskRepository) Create(tx *sql.Tx, t *Task) error {
 			values ($1, $2, $3, $4, $5, $6, $7, $8, $9) 
 			returning %s`,
 			c.TableName,
-			c.CreatedAtField, c.FuncField, c.ArgsField, c.IsProcessedField, c.StartedAtField, c.FinishedAtField, c.IsSuccessField, c.ResultField, c.ErrorField,
+			c.RunAtField, c.FuncField, c.ArgsField, c.IsProcessedField, c.StartedAtField, c.FinishedAtField, c.IsSuccessField, c.ResultField, c.ErrorField,
 			c.IdField,
 		),
 	)
@@ -179,7 +179,7 @@ func (r *PostgresTaskRepository) Create(tx *sql.Tx, t *Task) error {
 	}
 	defer stmt.Close()
 
-	err = stmt.QueryRow(t.CreatedAt, t.Func, args, t.IsProcessed, t.StartedAt, t.FinishedAt, t.IsSuccess, result, t.Error).Scan(&t.Id)
+	err = stmt.QueryRow(t.RunAt, t.Func, args, t.IsProcessed, t.StartedAt, t.FinishedAt, t.IsSuccess, result, t.Error).Scan(&t.Id)
 	return err
 }
 
@@ -221,7 +221,7 @@ func (r *PostgresTaskRepository) DeleteOld(tx *sql.Tx, moment time.Time) (int, e
 			`delete from %s 
 			where %s and %s<=$1`,
 			c.TableName,
-			c.IsProcessedField, c.CreatedAtField,
+			c.IsProcessedField, c.RunAtField,
 		),
 		moment,
 	)

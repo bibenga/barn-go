@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
-	"time"
 
 	barngo "github.com/bibenga/barn-go"
 	"github.com/bibenga/barn-go/examples"
@@ -35,9 +34,8 @@ func main() {
 		// return err
 		// }
 		task1 := task.Task{
-			Func:      "sentEmail",
-			Args:      map[string]any{"str": "str", "int": 12},
-			CreatedAt: time.Now().UTC(),
+			Func: "sentEmail",
+			Args: map[string]any{"str": "str", "int": 12},
 		}
 		if err := r.Create(tx, &task1); err != nil {
 			return err

@@ -12,7 +12,7 @@ const ()
 
 const DefaultTableName = "barn_task"
 const DefaultIdField = "id"
-const DefaultCreatedAtField = "created_at"
+const DefaultRunAtField = "run_at"
 const DefaultFuncField = "func"
 const DefaultArgsField = "args"
 const DefaultIsProcessedField = "is_processed"
@@ -25,7 +25,7 @@ const DefaultErrorField = "error"
 type TaskQueryConfig struct {
 	TableName        string
 	IdField          string
-	CreatedAtField   string
+	RunAtField       string
 	FuncField        string
 	ArgsField        string
 	IsProcessedField string
@@ -38,7 +38,7 @@ type TaskQueryConfig struct {
 
 type Task struct {
 	Id          int
-	CreatedAt   time.Time
+	RunAt       time.Time
 	Func        string
 	Args        any
 	IsProcessed bool
@@ -52,7 +52,7 @@ type Task struct {
 func (e Task) LogValue() slog.Value {
 	var args []slog.Attr
 	args = append(args, slog.Int("Id", e.Id))
-	args = append(args, slog.Time("CreatedAt", e.CreatedAt))
+	args = append(args, slog.Time("RunAt", e.RunAt))
 	args = append(args, slog.String("Func", e.Func))
 	args = append(args, slog.Any("Args", e.Args))
 	args = append(args, slog.Bool("IsProcessed", e.IsProcessed))
