@@ -140,28 +140,24 @@ func (w *Worker) process() error {
 				return sql.ErrNoRows
 			}
 			w.log.Info("process task", "task", t)
-			if t.IsProcessed {
+			if t.Status != Queued {
 				return errors.New("codebug: task is processed")
 			}
 			startedAt := time.Now().UTC()
 			if err := w.handler(tx, t); err != nil {
 				w.log.Error("the task is processed with error", "error", err)
 				finishedAt := time.Now().UTC()
-				success := false
 				errorMessage := err.Error()
-				t.IsProcessed = true
+				t.Status = Failed
 				t.StartedAt = &startedAt
 				t.FinishedAt = &finishedAt
-				t.IsSuccess = &success
 				t.Error = &errorMessage
 			} else {
 				w.log.Info("the task is processed with success")
 				finishedAt := time.Now().UTC()
-				success := true
-				t.IsProcessed = true
+				t.Status = Done
 				t.StartedAt = &startedAt
 				t.FinishedAt = &finishedAt
-				t.IsSuccess = &success
 				// task.Result = nil
 			}
 			w.log.Debug("save task", "task", t)

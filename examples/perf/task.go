@@ -59,7 +59,7 @@ func process(db *sql.DB, repository task.TaskRepository) {
 				return sql.ErrNoRows
 			}
 			i++
-			t.IsProcessed = true
+			t.Status = task.Done
 			if err := repository.Save(tx, t); err != nil {
 				return err
 			}

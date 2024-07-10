@@ -43,17 +43,14 @@ func (r *PostgresTaskRepository) setupDefaults() {
 	if c.ArgsField == "" {
 		c.ArgsField = DefaultArgsField
 	}
-	if c.IsProcessedField == "" {
-		c.IsProcessedField = DefaultIsProcessedField
+	if c.StatusField == "" {
+		c.StatusField = DefaultStatusField
 	}
 	if c.StartedAtField == "" {
 		c.StartedAtField = DefaultStartedAtField
 	}
 	if c.FinishedAtField == "" {
 		c.FinishedAtField = DefaultFinishedAtField
-	}
-	if c.IsSuccessField == "" {
-		c.IsSuccessField = DefaultIsSuccessField
 	}
 	if c.ResultField == "" {
 		c.ResultField = DefaultResultField
@@ -72,10 +69,9 @@ func (r *PostgresTaskRepository) CreateTable(tx *sql.Tx) error {
 				%s timestamp with time zone not null, 
 				%s varchar not null, 
 				%s jsonb, 
-				%s boolean default false not null, 
+				%s char(1) default 'Q' not null, 
 				%s timestamp with time zone, 
 				%s timestamp with time zone, 
-				%s boolean, 
 				%s jsonb, 
 				%s varchar, 
 				primary key (%s)
@@ -85,10 +81,9 @@ func (r *PostgresTaskRepository) CreateTable(tx *sql.Tx) error {
 			c.RunAtField,
 			c.FuncField,
 			c.ArgsField,
-			c.IsProcessedField,
+			c.StatusField,
 			c.StartedAtField,
 			c.FinishedAtField,
-			c.IsSuccessField,
 			c.ResultField,
 			c.ErrorField,
 			c.IdField,
@@ -111,15 +106,15 @@ func (r *PostgresTaskRepository) FindNext(tx *sql.Tx) (*Task, error) {
 	c := &r.config
 	stmt, err := tx.Prepare(
 		fmt.Sprintf(
-			`select %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+			`select %s, %s, %s, %s, %s, %s, %s, %s, %s
 			from %s
-			where not %s and %s < $1
+			where %s = $1 and %s < $2
 			order by %s
 			limit 1
 			for update skip locked`,
-			c.IdField, c.RunAtField, c.FuncField, c.ArgsField, c.IsProcessedField, c.StartedAtField, c.FinishedAtField, c.IsSuccessField, c.ResultField, c.ErrorField,
+			c.IdField, c.RunAtField, c.FuncField, c.ArgsField, c.StatusField, c.StartedAtField, c.FinishedAtField, c.ResultField, c.ErrorField,
 			c.TableName,
-			c.IsProcessedField, c.RunAtField,
+			c.StatusField, c.RunAtField,
 			c.RunAtField,
 		),
 	)
@@ -130,8 +125,8 @@ func (r *PostgresTaskRepository) FindNext(tx *sql.Tx) (*Task, error) {
 	var t Task
 	var args []byte
 	var result []byte
-	row := stmt.QueryRow(time.Now().UTC())
-	if err := row.Scan(&t.Id, &t.RunAt, &t.Func, &args, &t.IsProcessed, &t.StartedAt, &t.FinishedAt, &t.IsSuccess, &result, &t.Error); err != nil {
+	row := stmt.QueryRow(Queued, time.Now().UTC())
+	if err := row.Scan(&t.Id, &t.RunAt, &t.Func, &args, &t.Status, &t.StartedAt, &t.FinishedAt, &result, &t.Error); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
 		} else {
@@ -156,6 +151,9 @@ func (r *PostgresTaskRepository) Create(tx *sql.Tx, t *Task) error {
 	if t.RunAt.IsZero() {
 		t.RunAt = time.Now().UTC()
 	}
+	if t.Status == "" {
+		t.Status = Queued
+	}
 	args, err := json.Marshal(t.Args)
 	if err != nil {
 		return err
@@ -166,11 +164,11 @@ func (r *PostgresTaskRepository) Create(tx *sql.Tx, t *Task) error {
 	}
 	stmt, err := tx.Prepare(
 		fmt.Sprintf(
-			`insert into %s(%s, %s, %s, %s, %s, %s, %s, %s, %s) 
-			values ($1, $2, $3, $4, $5, $6, $7, $8, $9) 
+			`insert into %s(%s, %s, %s, %s, %s, %s, %s, %s) 
+			values ($1, $2, $3, $4, $5, $6, $7, $8) 
 			returning %s`,
 			c.TableName,
-			c.RunAtField, c.FuncField, c.ArgsField, c.IsProcessedField, c.StartedAtField, c.FinishedAtField, c.IsSuccessField, c.ResultField, c.ErrorField,
+			c.RunAtField, c.FuncField, c.ArgsField, c.StatusField, c.StartedAtField, c.FinishedAtField, c.ResultField, c.ErrorField,
 			c.IdField,
 		),
 	)
@@ -179,7 +177,7 @@ func (r *PostgresTaskRepository) Create(tx *sql.Tx, t *Task) error {
 	}
 	defer stmt.Close()
 
-	err = stmt.QueryRow(t.RunAt, t.Func, args, t.IsProcessed, t.StartedAt, t.FinishedAt, t.IsSuccess, result, t.Error).Scan(&t.Id)
+	err = stmt.QueryRow(t.RunAt, t.Func, args, t.Status, t.StartedAt, t.FinishedAt, result, t.Error).Scan(&t.Id)
 	return err
 }
 
@@ -192,13 +190,13 @@ func (r *PostgresTaskRepository) Save(tx *sql.Tx, t *Task) error {
 	res, err := tx.Exec(
 		fmt.Sprintf(
 			`update %s 
-			set %s=$1, %s=$2, %s=$3, %s=$4, %s=$5, %s=$6
-			where %s=$7`,
+			set %s=$1, %s=$2, %s=$3, %s=$4, %s=$5
+			where %s=$6`,
 			c.TableName,
-			c.IsProcessedField, c.StartedAtField, c.FinishedAtField, c.IsSuccessField, c.ResultField, c.ErrorField,
+			c.StatusField, c.StartedAtField, c.FinishedAtField, c.ResultField, c.ErrorField,
 			c.IdField,
 		),
-		t.IsProcessed, t.StartedAt, t.FinishedAt, t.IsSuccess, result, t.Error,
+		t.Status, t.StartedAt, t.FinishedAt, result, t.Error,
 		t.Id,
 	)
 	if err != nil {
@@ -219,11 +217,11 @@ func (r *PostgresTaskRepository) DeleteOld(tx *sql.Tx, moment time.Time) (int, e
 	res, err := tx.Exec(
 		fmt.Sprintf(
 			`delete from %s 
-			where %s and %s<=$1`,
+			where %s in ($1, $2) and %s<=$3`,
 			c.TableName,
-			c.IsProcessedField, c.RunAtField,
+			c.StatusField, c.RunAtField,
 		),
-		moment,
+		Done, Failed, moment,
 	)
 	if err != nil {
 		return 0, err
