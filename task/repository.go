@@ -6,11 +6,6 @@ import (
 	"time"
 )
 
-// class TaskStatus(models.TextChoices):
-//     QUEUED = "Q", gettext_lazy("Queued")
-//     DONE = "D", gettext_lazy("Done")
-//     FAILED = "F", gettext_lazy("Failed")
-
 type Status string
 
 const (
