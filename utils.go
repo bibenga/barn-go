@@ -35,8 +35,8 @@ type FieldMeta struct {
 
 type TableMeta struct {
 	TableName    string
-	Fields       []FieldMeta
-	FieldsByName map[string]FieldMeta
+	Fields       []*FieldMeta
+	FieldsByName map[string]*FieldMeta
 }
 
 type Tabler interface {
@@ -53,7 +53,7 @@ func GetTableMeta(t interface{}) TableMeta {
 	}
 
 	meta := TableMeta{
-		FieldsByName: make(map[string]FieldMeta),
+		FieldsByName: make(map[string]*FieldMeta),
 	}
 	if tabler, ok := t.(Tabler); ok {
 		meta.TableName = tabler.TableName()
@@ -87,8 +87,8 @@ func GetTableMeta(t interface{}) TableMeta {
 			StructName: f.Name,
 			DbName:     dbName,
 		}
-		meta.Fields = append(meta.Fields, fieldConfig)
-		meta.FieldsByName[fieldName] = fieldConfig
+		meta.Fields = append(meta.Fields, &fieldConfig)
+		meta.FieldsByName[fieldName] = &fieldConfig
 	}
 	// TODO: check required fields
 	// if meta.Id.Name == "" || meta.Id.DbName == "" {
