@@ -62,18 +62,6 @@ func main() {
 	)
 
 	err := barngo.RunInTransaction(db, func(tx *sql.Tx) error {
-		_, err := tx.Exec(`create schema if not exists barn`)
-		if err != nil {
-			return err
-		}
-
-		if err := scheduler.CreateTable(tx); err != nil {
-			return err
-		}
-		if err := scheduler.DeleteAll(tx); err != nil {
-			return err
-		}
-
 		cron1 := "*/5 * * * * *"
 		schedule := barngo.Schedule{
 			Name: "sendNotifications",
@@ -85,9 +73,6 @@ func main() {
 			return err
 		}
 
-		if err := worker.CreateTable(tx); err != nil {
-			return err
-		}
 		task := barngo.Task{
 			Func: "sendNotifications",
 			Args: map[string]any{"type": "started"},

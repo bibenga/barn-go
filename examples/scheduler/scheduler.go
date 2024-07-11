@@ -25,13 +25,6 @@ func main() {
 	)
 
 	err := barngo.RunInTransaction(db, func(tx *sql.Tx) error {
-		if err := worker.CreateTable(tx); err != nil {
-			return err
-		}
-		if err := worker.DeleteAll(tx); err != nil {
-			return err
-		}
-
 		cron1 := "*/5 * * * * *"
 		schedule := barngo.Schedule{
 			Name:     "olala1",

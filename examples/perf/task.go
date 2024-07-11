@@ -84,19 +84,6 @@ func main() {
 
 	repository := barngo.NewWorker[barngo.Task](db)
 
-	err := barngo.RunInTransaction(db, func(tx *sql.Tx) error {
-		if err := repository.CreateTable(tx); err != nil {
-			return err
-		}
-		if err := repository.DeleteAll(tx); err != nil {
-			return err
-		}
-		return nil
-	})
-	if err != nil {
-		panic(err)
-	}
-
 	insert(db, repository)
 	process(db, repository)
 }

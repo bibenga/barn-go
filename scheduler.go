@@ -216,26 +216,6 @@ func (w *Scheduler[S]) processTasks() error {
 	return err
 }
 
-func (w *Scheduler[S]) CreateTable(tx *sql.Tx) error {
-	c := &w.meta
-	query := fmt.Sprintf(`
-		create table if not exists %s (
-			id serial not null, 
-			name varchar not null, 
-			is_active boolean default true not null, 
-			cron varchar, 
-			next_run_at timestamp with time zone, 
-			last_run_at timestamp with time zone, 
-			func varchar not null,
-			args jsonb, 
-			primary key (id)
-		);`,
-		c.TableName,
-	)
-	_, err := tx.Exec(query)
-	return err
-}
-
 func (w *Scheduler[S]) FindAllActiveAndUnprocessed(tx *sql.Tx, moment time.Time) ([]*S, error) {
 	c := &w.meta
 

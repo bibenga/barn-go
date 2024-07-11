@@ -4,7 +4,9 @@ import (
 	"database/sql"
 	"log"
 	"log/slog"
+	"os"
 
+	barngo "github.com/bibenga/barn-go"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/jackc/pgx/v5/tracelog"
@@ -43,5 +45,19 @@ func InitDb(trace bool) *sql.DB {
 	if err := db.Ping(); err != nil {
 		panic(err)
 	}
+
+	bytes, err := os.ReadFile("examples/schema.sql")
+	if err != nil {
+		panic(err)
+	}
+	schema := string(bytes)
+	err = barngo.RunInTransaction(db, func(tx *sql.Tx) error {
+		_, err := tx.Exec(schema)
+		return err
+	})
+	if err != nil {
+		panic(err)
+	}
+
 	return db
 }

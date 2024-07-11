@@ -25,13 +25,6 @@ func main() {
 	)
 
 	err := barngo.RunInTransaction(db, func(tx *sql.Tx) error {
-		if err := worker.CreateTable(tx); err != nil {
-			return err
-		}
-		if err := worker.DeleteAll(tx); err != nil {
-			return err
-		}
-
 		task1 := barngo.Task{
 			Func: "sentEmail",
 			Args: map[string]any{"str": "str", "int": 12},
@@ -39,7 +32,6 @@ func main() {
 		if err := worker.Create(tx, &task1); err != nil {
 			return err
 		}
-
 		return nil
 	})
 	if err != nil {

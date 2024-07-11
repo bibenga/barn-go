@@ -199,30 +199,6 @@ func (w *Worker[T]) deleteOld() error {
 	})
 }
 
-func (w *Worker[T]) CreateTable(tx *sql.Tx) error {
-	c := &w.meta
-	query := fmt.Sprintf(`
-		create table if not exists %s (
-			id serial not null, 
-			run_at timestamp with time zone, 
-			func varchar not null,
-			args jsonb, 
-			status char(1) default 'Q',
-			started_at timestamp with time zone, 
-			finished_at timestamp with time zone, 
-			result jsonb, 
-			error varchar, 
-			primary key (id)
-		);
-		create index if not exists idx_%s_run_at on %s(run_at);`,
-		c.TableName,
-		c.TableName,
-		c.TableName,
-	)
-	_, err := tx.Exec(query)
-	return err
-}
-
 func (w *Worker[T]) FindNext(tx *sql.Tx) (*T, error) {
 	c := &w.meta
 

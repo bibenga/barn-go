@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"os"
 	"testing"
 	"time"
 
@@ -76,23 +77,21 @@ func setupTestDb(t *testing.T) *sql.DB {
 
 	db := newTestDb(t)
 
-	err := RunInTransaction(db, func(tx *sql.Tx) error {
-		worker := NewWorker[Task](db)
-		err := worker.CreateTable(tx)
-		assert.NoError(err)
-
-		scheduler := NewScheduler[Schedule](db)
-		err = scheduler.CreateTable(tx)
-		assert.NoError(err)
-
-		return nil
+	bytes, err := os.ReadFile("schema_test.sql")
+	if err != nil {
+		panic(err)
+	}
+	schema := string(bytes)
+	err = RunInTransaction(db, func(tx *sql.Tx) error {
+		_, err := tx.Exec(schema)
+		return err
 	})
 	assert.NoError(err)
 
 	return db
 }
 
-type TestModel struct {
+type testModel struct {
 	Id         int        `barn:""`
 	RunAt      time.Time  `barn:""`
 	Func       string     `barn:""`
@@ -107,7 +106,7 @@ type TestModel struct {
 func TestTaskModelMetaPointer(t *testing.T) {
 	assert := require.New(t)
 
-	task := new(TestModel)
+	task := new(testModel)
 	meta := GetTableMeta(task)
 	assert.Equal(meta.TableName, "test_model")
 }
