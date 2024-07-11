@@ -1,11 +1,10 @@
-package task
+package scheduler
 
 import (
 	"database/sql"
 	"fmt"
 	"log/slog"
 	"testing"
-	"time"
 
 	barngo "github.com/bibenga/barn-go"
 	"github.com/jackc/pgx/v5"
@@ -71,10 +70,9 @@ func setup(t *testing.T) *sql.DB {
 	assert.NotNil(db)
 	assert.NoError(db.Ping())
 
-	repository := NewPostgresTaskRepository()
+	scheduler := NewSimpleScheduler2[Schedule](db)
 	err = barngo.RunInTransaction(db, func(tx *sql.Tx) error {
-		pgRepository := repository.(*PostgresTaskRepository)
-		if err := pgRepository.CreateTable(tx); err != nil {
+		if err := scheduler.CreateTable(tx); err != nil {
 			return err
 		}
 		return nil
@@ -90,95 +88,27 @@ func setup(t *testing.T) *sql.DB {
 	return db
 }
 
-func TestCreate(t *testing.T) {
+func TestSchedulerCreate(t *testing.T) {
 	assert := require.New(t)
 
 	db := setup(t)
 
-	repository := NewPostgresTaskRepository()
+	scheduler := NewSimpleScheduler2[Schedule](db)
 
 	err := barngo.RunInTransaction(db, func(tx *sql.Tx) error {
-		t := Task{
+		t := Schedule{
 			Func: "sentEmail",
 			Args: map[string]any{"str": "str", "int": 12},
 		}
-		if err := repository.Create(tx, &t); err != nil {
+		if err := scheduler.Create(tx, &t); err != nil {
 			return err
 		}
+		assert.Greater(t.Id, 0)
 		return nil
 	})
 	assert.NoError(err)
 
-	row := db.QueryRow("select count(*) from barn_task")
-	assert.NoError(row.Err())
-	assert.NotNil(row)
-	var count int
-	assert.NoError(row.Scan(&count))
-	assert.Equal(count, 1)
-}
-
-func TestFindNext(t *testing.T) {
-	assert := require.New(t)
-
-	db := setup(t)
-
-	repository := NewPostgresTaskRepository()
-
-	err := barngo.RunInTransaction(db, func(tx *sql.Tx) error {
-		t := Task{
-			Func: "sentEmail",
-			Args: map[string]any{"str": "str", "int": 12},
-		}
-		if err := repository.Create(tx, &t); err != nil {
-			return err
-		}
-
-		if f, err := repository.FindNext(tx); err != nil {
-			return err
-		} else {
-			assert.NotNil(f)
-			assert.Equal(f.Id, t.Id)
-		}
-		return nil
-	})
-	assert.NoError(err)
-
-	row := db.QueryRow("select count(*) from barn_task")
-	assert.NoError(row.Err())
-	assert.NotNil(row)
-	var count int
-	assert.NoError(row.Scan(&count))
-	assert.Equal(count, 1)
-}
-
-func TestFindNextPending(t *testing.T) {
-	assert := require.New(t)
-
-	db := setup(t)
-
-	repository := NewPostgresTaskRepository()
-
-	err := barngo.RunInTransaction(db, func(tx *sql.Tx) error {
-		t := Task{
-			RunAt: time.Now().UTC().Add(1 * time.Hour),
-			Func:  "sentEmail",
-			Args:  map[string]any{"str": "str", "int": 12},
-		}
-		if err := repository.Create(tx, &t); err != nil {
-			return err
-		}
-
-		if f, err := repository.FindNext(tx); err != nil {
-			return err
-		} else {
-			assert.Nil(f)
-		}
-
-		return nil
-	})
-	assert.NoError(err)
-
-	row := db.QueryRow("select count(*) from barn_task")
+	row := db.QueryRow("select count(*) from barn_schedule")
 	assert.NoError(row.Err())
 	assert.NotNil(row)
 	var count int
