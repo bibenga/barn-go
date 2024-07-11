@@ -47,7 +47,7 @@ func main() {
 		return true, nil
 	})
 
-	sworker := scheduler.NewSimpleScheduler2[scheduler.Schedule](
+	sworker = scheduler.NewSimpleScheduler2[scheduler.Schedule](
 		db,
 		scheduler.SchedulerConfig2[scheduler.Schedule]{
 			Cron:    "*/10 * * * * *",
