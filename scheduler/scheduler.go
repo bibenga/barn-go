@@ -17,24 +17,24 @@ import (
 	barngo "github.com/bibenga/barn-go"
 )
 
-type SchedulerHandler2[S any] func(tx *sql.Tx, schedule *S) error
+type SchedulerHandler[S any] func(tx *sql.Tx, schedule *S) error
 
-func dummySchedulerHandler2[S any](tx *sql.Tx, s *S) error {
+func dummySchedulerHandler[S any](tx *sql.Tx, s *S) error {
 	slog.Debug("DUMMY: process", "schedule", s)
 	return nil
 }
 
-var _ SchedulerHandler2[Schedule] = dummySchedulerHandler2[Schedule]
+var _ SchedulerHandler[Schedule] = dummySchedulerHandler[Schedule]
 
-type SchedulerConfig2[S any] struct {
+type SchedulerConfig[S any] struct {
 	Log     *slog.Logger
 	Cron    string
-	Handler SchedulerHandler2[S]
+	Handler SchedulerHandler[S]
 }
 
-type Scheduler2[S any] struct {
+type Scheduler[S any] struct {
 	log     *slog.Logger
-	handler SchedulerHandler2[S]
+	handler SchedulerHandler[S]
 	db      *sql.DB
 	meta    barngo.TableMeta
 	running atomic.Bool
@@ -44,10 +44,10 @@ type Scheduler2[S any] struct {
 	nextTs  time.Time
 }
 
-func NewSimpleScheduler2[S any](db *sql.DB, config ...SchedulerConfig2[S]) *Scheduler2[S] {
+func NewScheduler[S any](db *sql.DB, config ...SchedulerConfig[S]) *Scheduler[S] {
 	var log *slog.Logger
 	var cron string
-	var handler SchedulerHandler2[S]
+	var handler SchedulerHandler[S]
 	if len(config) == 1 {
 		log = config[0].Log
 		cron = config[0].Cron
@@ -64,10 +64,10 @@ func NewSimpleScheduler2[S any](db *sql.DB, config ...SchedulerConfig2[S]) *Sche
 		}
 	}
 	if handler == nil {
-		handler = dummySchedulerHandler2[S]
+		handler = dummySchedulerHandler[S]
 	}
 	meta := barngo.GetTableMeta(new(S))
-	scheduler := Scheduler2[S]{
+	scheduler := Scheduler[S]{
 		log:     log,
 		handler: handler,
 		db:      db,
@@ -77,83 +77,83 @@ func NewSimpleScheduler2[S any](db *sql.DB, config ...SchedulerConfig2[S]) *Sche
 	return &scheduler
 }
 
-func (s *Scheduler2[S]) Start() {
-	s.StartContext(context.Background())
+func (w *Scheduler[S]) Start() {
+	w.StartContext(context.Background())
 }
 
-func (s *Scheduler2[S]) StartContext(ctx context.Context) {
-	if s.running.Load() {
+func (w *Scheduler[S]) StartContext(ctx context.Context) {
+	if w.running.Load() {
 		panic(errors.New("already running"))
 	}
 
-	s.stoped.Add(1)
-	ctx, s.cancel = context.WithCancel(ctx)
-	go s.run(ctx)
+	w.stoped.Add(1)
+	ctx, w.cancel = context.WithCancel(ctx)
+	go w.run(ctx)
 }
 
-func (s *Scheduler2[S]) Stop() {
-	s.log.Debug("Stopping")
-	s.cancel()
-	s.stoped.Wait()
-	s.log.Debug("Stopped")
+func (w *Scheduler[S]) Stop() {
+	w.log.Debug("Stopping")
+	w.cancel()
+	w.stoped.Wait()
+	w.log.Debug("Stopped")
 }
 
-func (s *Scheduler2[S]) run(ctx context.Context) {
-	s.log.Debug("scheduler stated")
+func (w *Scheduler[S]) run(ctx context.Context) {
+	w.log.Debug("scheduler stated")
 	defer func() {
-		s.log.Debug("scheduler terminated")
+		w.log.Debug("scheduler terminated")
 	}()
 
-	s.running.Store(true)
+	w.running.Store(true)
 	defer func() {
-		s.running.Store(false)
+		w.running.Store(false)
 	}()
 
-	defer s.stoped.Done()
+	defer w.stoped.Done()
 
-	if nextTs, err := gronx.NextTick(s.cron, true); err != nil {
+	if nextTs, err := gronx.NextTick(w.cron, true); err != nil {
 		panic(err)
 	} else {
-		s.nextTs = nextTs
+		w.nextTs = nextTs
 	}
 
 	for {
-		s.log.Info("next event time", "NextTs", s.nextTs)
-		d := time.Until(s.nextTs)
+		w.log.Info("next event time", "NextTs", w.nextTs)
+		d := time.Until(w.nextTs)
 		timer := time.NewTimer(d)
 		defer timer.Stop()
 
 		select {
 		case <-ctx.Done():
-			s.log.Info("terminate")
+			w.log.Info("terminate")
 			return
 		case <-timer.C:
-			if err := s.processTasks(); err != nil {
+			if err := w.processTasks(); err != nil {
 				panic(err)
 			}
 
-			if nextTs, err := gronx.NextTick(s.cron, false); err != nil {
+			if nextTs, err := gronx.NextTick(w.cron, false); err != nil {
 				panic(err)
 			} else {
-				s.nextTs = nextTs
+				w.nextTs = nextTs
 			}
 		}
 	}
 }
 
-func (s *Scheduler2[S]) processTasks() error {
-	c := &s.meta
+func (w *Scheduler[S]) processTasks() error {
+	c := &w.meta
 
-	s.log.Info("process")
+	w.log.Info("process")
 
-	err := barngo.RunInTransaction(s.db, func(tx *sql.Tx) error {
-		schedules, err := s.FindAllActiveAndUnprocessed(tx, time.Now().UTC())
+	err := barngo.RunInTransaction(w.db, func(tx *sql.Tx) error {
+		schedules, err := w.FindAllActiveAndUnprocessed(tx, time.Now().UTC())
 		if err != nil {
 			return err
 		}
-		s.log.Debug("the schedules is loaded", "count", len(schedules))
+		w.log.Debug("the schedules is loaded", "count", len(schedules))
 		for _, dbSchedule := range schedules {
-			s.log.Info("process the schedule", "schedule", dbSchedule)
+			w.log.Info("process the schedule", "schedule", dbSchedule)
 
 			tv := reflect.ValueOf(dbSchedule).Elem()
 
@@ -176,39 +176,39 @@ func (s *Scheduler2[S]) processTasks() error {
 			}
 
 			if nextRunAt == nil && cron == nil {
-				s.log.Debug("the schedule is not valid")
+				w.log.Debug("the schedule is not valid")
 				// dbSchedule.IsActive = false
 				barngo.SetFieldValue(tv.FieldByName(c.FieldsByName["IsActive"].StructName), false)
-				if err := s.Save(tx, dbSchedule); err != nil {
+				if err := w.Save(tx, dbSchedule); err != nil {
 					return err
 				}
 				continue
 			}
-			if err := s.handler(tx, dbSchedule); err != nil {
-				s.log.Error("the schedule processed with error", "error", err)
+			if err := w.handler(tx, dbSchedule); err != nil {
+				w.log.Error("the schedule processed with error", "error", err)
 			}
 			if cron == nil {
-				s.log.Info("the schedule is one shot")
+				w.log.Info("the schedule is one shot")
 				// dbSchedule.IsActive = false
 				// dbSchedule.LastRunAt = dbSchedule.NextRunAt
 				barngo.SetFieldValue(tv.FieldByName(c.FieldsByName["IsActive"].StructName), false)
 				barngo.SetFieldValue(tv.FieldByName(c.FieldsByName["LastRunAt"].StructName), lastRunAt)
 			} else {
 				if nextTs, err := gronx.NextTick(*cron, false); err != nil {
-					s.log.Info("the schedule has an invalid cron expression", "error", err)
+					w.log.Info("the schedule has an invalid cron expression", "error", err)
 					// dbSchedule.IsActive = false
 					// dbSchedule.LastRunAt = dbSchedule.NextRunAt
 					barngo.SetFieldValue(tv.FieldByName(c.FieldsByName["IsActive"].StructName), false)
 					barngo.SetFieldValue(tv.FieldByName(c.FieldsByName["LastRunAt"].StructName), lastRunAt)
 				} else {
-					s.log.Info("the schedule is planned", "time", nextTs)
+					w.log.Info("the schedule is planned", "time", nextTs)
 					// dbSchedule.LastRunAt = dbSchedule.NextRunAt
 					// dbSchedule.NextRunAt = &nextTs
 					barngo.SetFieldValue(tv.FieldByName(c.FieldsByName["NextRunAt"].StructName), nextTs)
 					barngo.SetFieldValue(tv.FieldByName(c.FieldsByName["LastRunAt"].StructName), lastRunAt)
 				}
 			}
-			if err := s.Save(tx, dbSchedule); err != nil {
+			if err := w.Save(tx, dbSchedule); err != nil {
 				return err
 			}
 		}
@@ -217,8 +217,8 @@ func (s *Scheduler2[S]) processTasks() error {
 	return err
 }
 
-func (s *Scheduler2[S]) CreateTable(tx *sql.Tx) error {
-	c := &s.meta
+func (w *Scheduler[S]) CreateTable(tx *sql.Tx) error {
+	c := &w.meta
 	query := fmt.Sprintf(`
 		create table if not exists %s (
 			id serial not null, 
@@ -237,8 +237,8 @@ func (s *Scheduler2[S]) CreateTable(tx *sql.Tx) error {
 	return err
 }
 
-func (s *Scheduler2[S]) FindAllActiveAndUnprocessed(tx *sql.Tx, moment time.Time) ([]*S, error) {
-	c := &s.meta
+func (w *Scheduler[S]) FindAllActiveAndUnprocessed(tx *sql.Tx, moment time.Time) ([]*S, error) {
+	c := &w.meta
 
 	var fields []string
 	for _, f := range c.Fields {
@@ -300,8 +300,8 @@ func (s *Scheduler2[S]) FindAllActiveAndUnprocessed(tx *sql.Tx, moment time.Time
 	return schedules, nil
 }
 
-func (s *Scheduler2[S]) Create(tx *sql.Tx, schedule *S) error {
-	c := &s.meta
+func (w *Scheduler[S]) Create(tx *sql.Tx, schedule *S) error {
+	c := &w.meta
 
 	tv := reflect.ValueOf(schedule).Elem()
 
@@ -350,8 +350,8 @@ func (s *Scheduler2[S]) Create(tx *sql.Tx, schedule *S) error {
 	return err
 }
 
-func (s *Scheduler2[S]) Save(tx *sql.Tx, schedule *S) error {
-	c := &s.meta
+func (w *Scheduler[S]) Save(tx *sql.Tx, schedule *S) error {
+	c := &w.meta
 
 	tv := reflect.ValueOf(schedule).Elem()
 
@@ -403,8 +403,8 @@ func (s *Scheduler2[S]) Save(tx *sql.Tx, schedule *S) error {
 	return nil
 }
 
-func (s *Scheduler2[S]) Delete(tx *sql.Tx, pk any) error {
-	c := &s.meta
+func (w *Scheduler[S]) Delete(tx *sql.Tx, pk any) error {
+	c := &w.meta
 	query := fmt.Sprintf(
 		`delete from %s where %s=$1`,
 		c.TableName, c.FieldsByName["Id"].DbName,
@@ -423,8 +423,8 @@ func (s *Scheduler2[S]) Delete(tx *sql.Tx, pk any) error {
 	return nil
 }
 
-func (s *Scheduler2[S]) DeleteAll(tx *sql.Tx) error {
-	c := &s.meta
+func (w *Scheduler[S]) DeleteAll(tx *sql.Tx) error {
+	c := &w.meta
 	query := fmt.Sprintf(
 		`delete from %s`,
 		c.TableName,

@@ -13,7 +13,7 @@ import (
 const count = 1000
 const progress = 100
 
-func insert(db *sql.DB, repository *task.Worker2[task.Task]) {
+func insert(db *sql.DB, repository *task.Worker[task.Task]) {
 	started := time.Now().UTC()
 	for i := 0; i < count; i++ {
 		if progress > 0 {
@@ -41,7 +41,7 @@ func insert(db *sql.DB, repository *task.Worker2[task.Task]) {
 	slog.Info("insert", "duration", d, "n/s", float64(count)/d.Seconds())
 }
 
-func process(db *sql.DB, repository *task.Worker2[task.Task]) {
+func process(db *sql.DB, repository *task.Worker[task.Task]) {
 	started := time.Now().UTC()
 	i := 0
 	for {
@@ -83,7 +83,7 @@ func main() {
 	db := examples.InitDb(false)
 	defer db.Close()
 
-	repository := task.NewWorker2[task.Task](db)
+	repository := task.NewWorker[task.Task](db)
 
 	err := barngo.RunInTransaction(db, func(tx *sql.Tx) error {
 		if err := repository.CreateTable(tx); err != nil {

@@ -70,7 +70,7 @@ func setup(t *testing.T) *sql.DB {
 	assert.NotNil(db)
 	assert.NoError(db.Ping())
 
-	scheduler := NewSimpleScheduler2[Schedule](db)
+	scheduler := NewScheduler[Schedule](db)
 	err = barngo.RunInTransaction(db, func(tx *sql.Tx) error {
 		if err := scheduler.CreateTable(tx); err != nil {
 			return err
@@ -93,7 +93,7 @@ func TestSchedulerCreate(t *testing.T) {
 
 	db := setup(t)
 
-	scheduler := NewSimpleScheduler2[Schedule](db)
+	scheduler := NewScheduler[Schedule](db)
 
 	err := barngo.RunInTransaction(db, func(tx *sql.Tx) error {
 		t := Schedule{

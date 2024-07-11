@@ -71,7 +71,7 @@ func setup(t *testing.T) *sql.DB {
 	assert.NotNil(db)
 	assert.NoError(db.Ping())
 
-	worker := NewWorker2[Task](db)
+	worker := NewWorker[Task](db)
 	err = barngo.RunInTransaction(db, func(tx *sql.Tx) error {
 		if err := worker.CreateTable(tx); err != nil {
 			return err
@@ -94,7 +94,7 @@ func TestWorkerCreate(t *testing.T) {
 
 	db := setup(t)
 
-	worker := NewWorker2[Task](db)
+	worker := NewWorker[Task](db)
 
 	err := barngo.RunInTransaction(db, func(tx *sql.Tx) error {
 		t := Task{
@@ -122,7 +122,7 @@ func TestWorkerFindNext(t *testing.T) {
 
 	db := setup(t)
 
-	worker := NewWorker2[Task](db)
+	worker := NewWorker[Task](db)
 
 	err := barngo.RunInTransaction(db, func(tx *sql.Tx) error {
 		t := Task{
@@ -156,7 +156,7 @@ func TestWorkerFindNextPending(t *testing.T) {
 
 	db := setup(t)
 
-	worker := NewWorker2[Task](db)
+	worker := NewWorker[Task](db)
 
 	err := barngo.RunInTransaction(db, func(tx *sql.Tx) error {
 		t := Task{

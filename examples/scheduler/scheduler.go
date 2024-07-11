@@ -18,9 +18,9 @@ func main() {
 	db := examples.InitDb(false)
 	defer db.Close()
 
-	worker := scheduler.NewSimpleScheduler2[scheduler.Schedule](
+	worker := scheduler.NewScheduler[scheduler.Schedule](
 		db,
-		scheduler.SchedulerConfig2[scheduler.Schedule]{
+		scheduler.SchedulerConfig[scheduler.Schedule]{
 			Cron: "*/5 * * * * *",
 		},
 	)

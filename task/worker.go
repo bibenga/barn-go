@@ -19,17 +19,24 @@ import (
 
 const IgnoreResult = "IgnoreResult"
 
-type TaskHandler2[T any] func(tx *sql.Tx, task *T) (any, error)
+type TaskHandler[T any] func(tx *sql.Tx, task *T) (any, error)
 
-type WorkerConfig2[T any] struct {
-	Log     *slog.Logger
-	Cron    string
-	Handler TaskHandler2[T]
+func dummyTaskHandler[T any](tx *sql.Tx, t *T) (any, error) {
+	slog.Info("DUMMY: process", "task", t)
+	return IgnoreResult, nil
 }
 
-type Worker2[T any] struct {
+var _ TaskHandler[Task] = dummyTaskHandler[Task]
+
+type WorkerConfig[T any] struct {
+	Log     *slog.Logger
+	Cron    string
+	Handler TaskHandler[T]
+}
+
+type Worker[T any] struct {
 	log     *slog.Logger
-	handler TaskHandler2[T]
+	handler TaskHandler[T]
 	db      *sql.DB
 	meta    barngo.TableMeta
 	cron    string
@@ -38,14 +45,14 @@ type Worker2[T any] struct {
 	stoped  sync.WaitGroup
 }
 
-func NewWorker2[T any](db *sql.DB, config ...WorkerConfig2[T]) *Worker2[T] {
+func NewWorker[T any](db *sql.DB, config ...WorkerConfig[T]) *Worker[T] {
 	if db == nil {
 		panic(errors.New("db is nil"))
 	}
 
 	var log *slog.Logger
 	var cron string
-	var handler TaskHandler2[T]
+	var handler TaskHandler[T]
 	if len(config) == 1 {
 		log = config[0].Log
 		cron = config[0].Cron
@@ -62,10 +69,10 @@ func NewWorker2[T any](db *sql.DB, config ...WorkerConfig2[T]) *Worker2[T] {
 		}
 	}
 	if handler == nil {
-		handler = dummyTaskHandler2[T]
+		handler = dummyTaskHandler[T]
 	}
 	meta := barngo.GetTableMeta(new(Task))
-	w := Worker2[T]{
+	w := Worker[T]{
 		log:     log,
 		handler: handler,
 		db:      db,
@@ -75,11 +82,11 @@ func NewWorker2[T any](db *sql.DB, config ...WorkerConfig2[T]) *Worker2[T] {
 	return &w
 }
 
-func (w *Worker2[T]) Start() {
+func (w *Worker[T]) Start() {
 	w.StartContext(context.Background())
 }
 
-func (w *Worker2[T]) StartContext(ctx context.Context) {
+func (w *Worker[T]) StartContext(ctx context.Context) {
 	if w.running.Load() {
 		panic(errors.New("already running"))
 	}
@@ -89,14 +96,14 @@ func (w *Worker2[T]) StartContext(ctx context.Context) {
 	go w.run(ctx)
 }
 
-func (w *Worker2[T]) Stop() {
+func (w *Worker[T]) Stop() {
 	w.log.Debug("Stopping")
 	w.cancel()
 	w.stoped.Wait()
 	w.log.Debug("Stopped")
 }
 
-func (w *Worker2[T]) run(ctx context.Context) {
+func (w *Worker[T]) run(ctx context.Context) {
 	w.log.Debug("worker is stated")
 	defer func() {
 		w.log.Debug("worker is stopped")
@@ -135,7 +142,7 @@ func (w *Worker2[T]) run(ctx context.Context) {
 	}
 }
 
-func (w *Worker2[T]) process() error {
+func (w *Worker[T]) process() error {
 	w.log.Debug("process")
 	c := &w.meta
 	for {
@@ -183,7 +190,7 @@ func (w *Worker2[T]) process() error {
 	}
 }
 
-func (w *Worker2[T]) deleteOld() error {
+func (w *Worker[T]) deleteOld() error {
 	w.log.Debug("deleteOld")
 	return barngo.RunInTransaction(w.db, func(tx *sql.Tx) error {
 		m := time.Now().UTC().Add(-30 * 24 * time.Hour)
@@ -193,7 +200,7 @@ func (w *Worker2[T]) deleteOld() error {
 	})
 }
 
-func (w *Worker2[T]) CreateTable(tx *sql.Tx) error {
+func (w *Worker[T]) CreateTable(tx *sql.Tx) error {
 	c := &w.meta
 	query := fmt.Sprintf(`
 		create table if not exists %s (
@@ -217,7 +224,7 @@ func (w *Worker2[T]) CreateTable(tx *sql.Tx) error {
 	return err
 }
 
-func (w *Worker2[T]) FindNext(tx *sql.Tx) (*T, error) {
+func (w *Worker[T]) FindNext(tx *sql.Tx) (*T, error) {
 	c := &w.meta
 
 	var fields []string
@@ -273,7 +280,7 @@ func (w *Worker2[T]) FindNext(tx *sql.Tx) (*T, error) {
 	return t, nil
 }
 
-func (w *Worker2[T]) Create(tx *sql.Tx, t *T) error {
+func (w *Worker[T]) Create(tx *sql.Tx, t *T) error {
 	c := &w.meta
 
 	tv := reflect.ValueOf(t).Elem()
@@ -351,7 +358,7 @@ func (w *Worker2[T]) Create(tx *sql.Tx, t *T) error {
 	return err
 }
 
-func (w *Worker2[T]) Save(tx *sql.Tx, t *T) error {
+func (w *Worker[T]) Save(tx *sql.Tx, t *T) error {
 	c := &w.meta
 
 	tv := reflect.ValueOf(t).Elem()
@@ -429,7 +436,7 @@ func (w *Worker2[T]) Save(tx *sql.Tx, t *T) error {
 	return nil
 }
 
-func (w *Worker2[T]) DeleteOld(tx *sql.Tx, moment time.Time) (int, error) {
+func (w *Worker[T]) DeleteOld(tx *sql.Tx, moment time.Time) (int, error) {
 	c := &w.meta
 	query := fmt.Sprintf(
 		`delete from %s 
@@ -448,7 +455,7 @@ func (w *Worker2[T]) DeleteOld(tx *sql.Tx, moment time.Time) (int, error) {
 	}
 }
 
-func (w *Worker2[T]) DeleteAll(tx *sql.Tx) error {
+func (w *Worker[T]) DeleteAll(tx *sql.Tx) error {
 	c := &w.meta
 	query := fmt.Sprintf(
 		`delete from %s`,
@@ -456,9 +463,4 @@ func (w *Worker2[T]) DeleteAll(tx *sql.Tx) error {
 	)
 	_, err := tx.Exec(query)
 	return err
-}
-
-func dummyTaskHandler2[T any](tx *sql.Tx, t *T) (any, error) {
-	slog.Info("DUMMY: process", "task", t)
-	return IgnoreResult, nil
 }

@@ -14,8 +14,8 @@ import (
 	"github.com/bibenga/barn-go/task"
 )
 
-var sworker *scheduler.Scheduler2[scheduler.Schedule]
-var tworker *task.Worker2[task.Task]
+var sworker *scheduler.Scheduler[scheduler.Schedule]
+var tworker *task.Worker[task.Task]
 var registry *task.TaskRegistry
 
 func scheduleHandler(tx *sql.Tx, s *scheduler.Schedule) error {
@@ -47,17 +47,17 @@ func main() {
 		return true, nil
 	})
 
-	sworker = scheduler.NewSimpleScheduler2[scheduler.Schedule](
+	sworker = scheduler.NewScheduler[scheduler.Schedule](
 		db,
-		scheduler.SchedulerConfig2[scheduler.Schedule]{
+		scheduler.SchedulerConfig[scheduler.Schedule]{
 			Cron:    "*/10 * * * * *",
 			Handler: scheduleHandler,
 		},
 	)
 
-	tworker = task.NewWorker2[task.Task](
+	tworker = task.NewWorker[task.Task](
 		db,
-		task.WorkerConfig2[task.Task]{
+		task.WorkerConfig[task.Task]{
 			Cron:    "*/10 * * * * *",
 			Handler: taskHandler,
 		},
