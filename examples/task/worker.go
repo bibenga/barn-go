@@ -9,7 +9,6 @@ import (
 
 	barngo "github.com/bibenga/barn-go"
 	"github.com/bibenga/barn-go/examples"
-	"github.com/bibenga/barn-go/task"
 )
 
 func main() {
@@ -18,29 +17,21 @@ func main() {
 	db := examples.InitDb(false)
 	defer db.Close()
 
-	repository := task.NewPostgresTaskRepository()
+	worker := barngo.NewWorker[barngo.Task](
+		db,
+		barngo.WorkerConfig[barngo.Task]{
+			Cron: "*/5 * * * * *",
+		},
+	)
 
 	err := barngo.RunInTransaction(db, func(tx *sql.Tx) error {
-		r := repository.(*task.PostgresTaskRepository)
-		if err := r.CreateTable(tx); err != nil {
-			return err
-		}
-		if err := r.DeleteAll(tx); err != nil {
-			return err
-		}
-
-		// payload1, err := json.Marshal(map[string]any{"str": "str", "int": 12})
-		// if err != nil {
-		// return err
-		// }
-		task1 := task.Task{
+		task1 := barngo.Task{
 			Func: "sentEmail",
 			Args: map[string]any{"str": "str", "int": 12},
 		}
-		if err := r.Create(tx, &task1); err != nil {
+		if err := worker.Create(tx, &task1); err != nil {
 			return err
 		}
-
 		return nil
 	})
 	if err != nil {
@@ -49,10 +40,6 @@ func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	worker := task.NewWorker(db, &task.WorkerConfig{
-		Repository: repository,
-		Cron:       "*/5 * * * * *",
-	})
 	worker.StartContext(ctx)
 
 	osSignal := make(chan os.Signal, 1)
