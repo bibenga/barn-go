@@ -70,7 +70,7 @@ func NewWorker[T any](db *sql.DB, config ...WorkerConfig[T]) *Worker[T] {
 	if handler == nil {
 		handler = dummyTaskHandler[T]
 	}
-	meta := GetTableMeta(new(Task))
+	meta := GetTableMeta(new(T))
 	w := Worker[T]{
 		log:     log,
 		handler: handler,
