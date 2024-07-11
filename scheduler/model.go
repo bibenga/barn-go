@@ -1,38 +1,9 @@
 package scheduler
 
 import (
-	"database/sql"
 	"log/slog"
 	"time"
-
-	"github.com/bibenga/barn-go/task"
 )
-
-const DefaultTableName = "barn_schedule"
-const DefaultIdField = "id"
-const DefaultNameField = "name"
-const DefaultIsActiveField = "is_active"
-const DefaultCronField = "cron"
-const DefaultNextRunAtField = "next_run_at"
-const DefaultLastRunAtField = "last_run_at"
-const DefaultFuncField = "func"
-const DefaultArgsField = "args"
-
-type ScheduleQueryConfig struct {
-	TableName      string
-	IdField        string
-	NameField      string
-	IsActiveField  string
-	CronField      string
-	NextRunAtField string
-	LastRunAtField string
-	FuncField      string
-	ArgsField      string
-
-	// TableName       string
-	Fields       []task.FieldConfig
-	FieldsByName map[string]task.FieldConfig
-}
 
 type Schedule struct {
 	Id        int        `barn:""`
@@ -72,11 +43,4 @@ func (e Schedule) LogValue() slog.Value {
 	args = append(args, slog.String("Func", e.Func))
 	args = append(args, slog.Any("Args", e.Args))
 	return slog.GroupValue(args...)
-}
-
-type SchedulerRepository interface {
-	FindAllActiveAndUnprocessed(tx *sql.Tx, moment time.Time) ([]*Schedule, error)
-	// FindOne(tx *sql.Tx, pk int) (*Schedule, error)
-	Save(tx *sql.Tx, s *Schedule) error
-	Delete(tx *sql.Tx, pk int) error
 }

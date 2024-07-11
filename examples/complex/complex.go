@@ -14,23 +14,54 @@ import (
 	"github.com/bibenga/barn-go/task"
 )
 
+var sworker *scheduler.Scheduler2[scheduler.Schedule]
+var tworker *task.Worker2[task.Task]
+var registry *task.TaskRegistry
+
+func scheduleHandler(tx *sql.Tx, s *scheduler.Schedule) error {
+	return tworker.Create(tx, &task.Task{
+		RunAt: *s.NextRunAt,
+		Func:  s.Func,
+		Args:  s.Args,
+	})
+}
+
+func taskHandler(tx *sql.Tx, t *task.Task) (any, error) {
+	result, err := registry.Call(tx, t.Func, t.Args)
+	if err != nil {
+		return nil, err
+	}
+	t.Result = result
+	return task.IgnoreResult, nil
+}
+
 func main() {
 	examples.Setup(true)
 
 	db := examples.InitDb(false)
 	defer db.Close()
 
-	schedulerRepository := scheduler.NewPostgresSchedulerRepository(
-		scheduler.ScheduleQueryConfig{
-			TableName: "public.schedule",
+	registry = task.NewTaskRegistry()
+	registry.Register("sendNotifications", func(tx *sql.Tx, args any) (any, error) {
+		slog.Info("CALLED: sendNotifications", "args", args)
+		return true, nil
+	})
+
+	sworker := scheduler.NewSimpleScheduler2[scheduler.Schedule](
+		db,
+		scheduler.SchedulerConfig2[scheduler.Schedule]{
+			Cron:    "*/10 * * * * *",
+			Handler: scheduleHandler,
 		},
 	)
-	taskRepository := task.NewPostgresTaskRepository(
-		task.TaskQueryConfig{
-			TableName: "public.task",
+
+	tworker = task.NewWorker2[task.Task](
+		db,
+		task.WorkerConfig2[task.Task]{
+			Cron:    "*/10 * * * * *",
+			Handler: taskHandler,
 		},
 	)
-	registry := task.NewTaskRegistry()
 
 	err := barngo.RunInTransaction(db, func(tx *sql.Tx) error {
 		_, err := tx.Exec(`create schema if not exists barn`)
@@ -38,11 +69,10 @@ func main() {
 			return err
 		}
 
-		pgSchedulerRepository := schedulerRepository.(*scheduler.PostgresSchedulerRepository)
-		if err := pgSchedulerRepository.CreateTable(tx); err != nil {
+		if err := sworker.CreateTable(tx); err != nil {
 			return err
 		}
-		if err := pgSchedulerRepository.DeleteAll(tx); err != nil {
+		if err := sworker.DeleteAll(tx); err != nil {
 			return err
 		}
 
@@ -53,19 +83,18 @@ func main() {
 			Func: "sendNotifications",
 			Args: map[string]any{"type": "welcome"},
 		}
-		if err := pgSchedulerRepository.Create(tx, &schedule); err != nil {
+		if err := sworker.Create(tx, &schedule); err != nil {
 			return err
 		}
 
-		pgTaskRepository := taskRepository.(*task.PostgresTaskRepository)
-		if err := pgTaskRepository.CreateTable(tx); err != nil {
+		if err := tworker.CreateTable(tx); err != nil {
 			return err
 		}
 		task := task.Task{
 			Func: "sendNotifications",
 			Args: map[string]any{"type": "started"},
 		}
-		if err := pgTaskRepository.Create(tx, &task); err != nil {
+		if err := tworker.Create(tx, &task); err != nil {
 			return err
 		}
 
@@ -75,38 +104,10 @@ func main() {
 		panic(err)
 	}
 
-	registry.Register("sendNotifications", func(tx *sql.Tx, args any) (any, error) {
-		slog.Info("CALLED: sendNotifications", "args", args)
-		return true, nil
-	})
-
 	ctx, cancel := context.WithCancel(context.Background())
 
-	scheduler := scheduler.NewSimpleScheduler(db, &scheduler.SchedulerConfig{
-		Repository: schedulerRepository,
-		Handler: func(tx *sql.Tx, s *scheduler.Schedule) error {
-			return taskRepository.Create(tx, &task.Task{
-				RunAt: *s.NextRunAt,
-				Func:  s.Func,
-				Args:  s.Args,
-			})
-		},
-	})
-	scheduler.StartContext(ctx)
-
-	worker := task.NewWorker(db, &task.WorkerConfig{
-		Repository: taskRepository,
-		Cron:       "*/10 * * * * *",
-		Handler: func(tx *sql.Tx, t *task.Task) error {
-			result, err := registry.Call(tx, t.Func, t.Args)
-			if err != nil {
-				return err
-			}
-			t.Result = result
-			return nil
-		},
-	})
-	worker.StartContext(ctx)
+	sworker.StartContext(ctx)
+	tworker.StartContext(ctx)
 
 	osSignal := make(chan os.Signal, 1)
 	signal.Notify(osSignal, os.Interrupt)
@@ -115,7 +116,6 @@ func main() {
 
 	cancel()
 	time.Sleep(1 * time.Second)
-
-	scheduler.Stop()
-	worker.Stop()
+	sworker.Stop()
+	tworker.Stop()
 }

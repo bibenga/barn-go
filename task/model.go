@@ -1,7 +1,6 @@
 package task
 
 import (
-	"database/sql"
 	"log/slog"
 	"time"
 )
@@ -13,36 +12,6 @@ const (
 	Done   Status = "D"
 	Failed Status = "F"
 )
-
-const DefaultTableName = "barn_task"
-const DefaultIdField = "id"
-const DefaultRunAtField = "run_at"
-const DefaultFuncField = "func"
-const DefaultArgsField = "args"
-const DefaultStatusField = "status"
-const DefaultStartedAtField = "started_at"
-const DefaultFinishedAtField = "finished_at"
-const DefaultResultField = "result"
-const DefaultErrorField = "error"
-
-type FieldConfig struct {
-	Name       string
-	StructName string
-	DbName     string
-}
-
-type TaskQueryConfig struct {
-	TableName       string
-	IdField         string
-	RunAtField      string
-	FuncField       string
-	ArgsField       string
-	StatusField     string
-	StartedAtField  string
-	FinishedAtField string
-	ResultField     string
-	ErrorField      string
-}
 
 type Task struct {
 	Id         int        `barn:""`
@@ -84,11 +53,4 @@ func (e Task) LogValue() slog.Value {
 		args = append(args, slog.String("Error", *e.Error))
 	}
 	return slog.GroupValue(args...)
-}
-
-type TaskRepository interface {
-	FindNext(tx *sql.Tx) (*Task, error)
-	Create(tx *sql.Tx, task *Task) error
-	Save(tx *sql.Tx, task *Task) error
-	DeleteOld(tx *sql.Tx, t time.Time) (int, error)
 }

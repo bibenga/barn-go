@@ -24,7 +24,7 @@ func TestTaskModelMetaPointer(t *testing.T) {
 
 	task := new(TestModel)
 	meta := GetTableMeta(task)
-	assert.Equal(meta.TableName, "barn_task")
+	assert.Equal(meta.TableName, "test_model")
 }
 
 func TestTaskModelMetaStruct(t *testing.T) {
@@ -32,5 +32,5 @@ func TestTaskModelMetaStruct(t *testing.T) {
 
 	task := TestModel{}
 	meta := GetTableMeta(task)
-	assert.Equal(meta.TableName, "barn_task")
+	assert.Equal(meta.TableName, "test_model")
 }

@@ -18,24 +18,30 @@ func main() {
 	db := examples.InitDb(false)
 	defer db.Close()
 
-	repository := scheduler.NewPostgresSchedulerRepository()
+	worker := scheduler.NewSimpleScheduler2[scheduler.Schedule](
+		db,
+		scheduler.SchedulerConfig2[scheduler.Schedule]{
+			Cron: "*/5 * * * * *",
+		},
+	)
+
 	err := barngo.RunInTransaction(db, func(tx *sql.Tx) error {
-		r := repository.(*scheduler.PostgresSchedulerRepository)
-		if err := r.CreateTable(tx); err != nil {
+		if err := worker.CreateTable(tx); err != nil {
 			return err
 		}
-		if err := r.DeleteAll(tx); err != nil {
+		if err := worker.DeleteAll(tx); err != nil {
 			return err
 		}
 
 		cron1 := "*/5 * * * * *"
 		schedule := scheduler.Schedule{
-			Name: "olala1",
-			Cron: &cron1,
-			Func: "sendEmails",
-			Args: map[string]any{"type": "welcome"},
+			Name:     "olala1",
+			IsActive: true,
+			Cron:     &cron1,
+			Func:     "sendEmails",
+			Args:     map[string]any{"type": "welcome"},
 		}
-		if err := r.Create(tx, &schedule); err != nil {
+		if err := worker.Create(tx, &schedule); err != nil {
 			return err
 		}
 		return nil
@@ -46,8 +52,7 @@ func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	scheduler := scheduler.NewSimpleScheduler(db, &scheduler.SchedulerConfig{Repository: repository})
-	scheduler.StartContext(ctx)
+	worker.StartContext(ctx)
 
 	osSignal := make(chan os.Signal, 1)
 	signal.Notify(osSignal, os.Interrupt)
@@ -55,5 +60,5 @@ func main() {
 	slog.Info("os signal received", "signal", s)
 
 	cancel()
-	scheduler.Stop()
+	worker.Stop()
 }
