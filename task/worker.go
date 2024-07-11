@@ -13,27 +13,27 @@ import (
 	barngo "github.com/bibenga/barn-go"
 )
 
-type TaskHandler[T any] func(tx *sql.Tx, task *T) error
+type TaskHandler func(tx *sql.Tx, task *Task) error
 
-type WorkerConfig[T any] struct {
+type WorkerConfig struct {
 	Log        *slog.Logger
-	Repository TaskRepository2[T]
+	Repository TaskRepository
 	Cron       string
-	Handler    TaskHandler[T]
+	Handler    TaskHandler
 }
 
-type Worker[T any] struct {
+type Worker struct {
 	log        *slog.Logger
-	handler    TaskHandler[T]
+	handler    TaskHandler
 	db         *sql.DB
-	repository TaskRepository2[T]
+	repository TaskRepository
 	cron       string
 	running    atomic.Bool
 	cancel     context.CancelFunc
 	stoped     sync.WaitGroup
 }
 
-func NewWorker[T any](db *sql.DB, config *WorkerConfig[T]) *Worker[T] {
+func NewWorker(db *sql.DB, config *WorkerConfig) *Worker {
 	if db == nil {
 		panic(errors.New("db is nil"))
 	}
@@ -41,7 +41,7 @@ func NewWorker[T any](db *sql.DB, config *WorkerConfig[T]) *Worker[T] {
 		panic(errors.New("config is nil"))
 	}
 	if config.Repository == nil {
-		config.Repository = NewPostgresTaskRepository2[T]()
+		config.Repository = NewPostgresTaskRepository()
 		// or just panic?
 		// panic(errors.New("repository is nil"))
 	}
@@ -58,7 +58,7 @@ func NewWorker[T any](db *sql.DB, config *WorkerConfig[T]) *Worker[T] {
 	if config.Log == nil {
 		config.Log = slog.Default()
 	}
-	w := Worker[T]{
+	w := Worker{
 		log:        config.Log,
 		handler:    config.Handler,
 		db:         db,
@@ -68,11 +68,11 @@ func NewWorker[T any](db *sql.DB, config *WorkerConfig[T]) *Worker[T] {
 	return &w
 }
 
-func (w *Worker[T]) Start() {
+func (w *Worker) Start() {
 	w.StartContext(context.Background())
 }
 
-func (w *Worker[T]) StartContext(ctx context.Context) {
+func (w *Worker) StartContext(ctx context.Context) {
 	if w.running.Load() {
 		panic(errors.New("already running"))
 	}
@@ -82,14 +82,14 @@ func (w *Worker[T]) StartContext(ctx context.Context) {
 	go w.run(ctx)
 }
 
-func (w *Worker[T]) Stop() {
+func (w *Worker) Stop() {
 	w.log.Debug("Stopping")
 	w.cancel()
 	w.stoped.Wait()
 	w.log.Debug("Stopped")
 }
 
-func (w *Worker[T]) run(ctx context.Context) {
+func (w *Worker) run(ctx context.Context) {
 	w.log.Debug("worker is stated")
 	defer func() {
 		w.log.Debug("worker is stopped")
@@ -128,7 +128,7 @@ func (w *Worker[T]) run(ctx context.Context) {
 	}
 }
 
-func (w *Worker[T]) process() error {
+func (w *Worker) process() error {
 	w.log.Debug("process")
 	for {
 		err := barngo.RunInTransaction(w.db, func(tx *sql.Tx) error {
@@ -140,25 +140,25 @@ func (w *Worker[T]) process() error {
 				return sql.ErrNoRows
 			}
 			w.log.Info("process task", "task", t)
-			// if t.Status != Queued {
-			// 	return errors.New("codebug: task is processed")
-			// }
-			// startedAt := time.Now().UTC()
+			if t.Status != Queued {
+				return errors.New("codebug: task is processed")
+			}
+			startedAt := time.Now().UTC()
 			if err := w.handler(tx, t); err != nil {
 				w.log.Error("the task is processed with error", "error", err)
-				// finishedAt := time.Now().UTC()
-				// errorMessage := err.Error()
-				// t.Status = Failed
-				// t.StartedAt = &startedAt
-				// t.FinishedAt = &finishedAt
-				// t.Error = &errorMessage
+				finishedAt := time.Now().UTC()
+				errorMessage := err.Error()
+				t.Status = Failed
+				t.StartedAt = &startedAt
+				t.FinishedAt = &finishedAt
+				t.Error = &errorMessage
 			} else {
 				w.log.Info("the task is processed with success")
-				// finishedAt := time.Now().UTC()
-				// t.Status = Done
-				// t.StartedAt = &startedAt
-				// t.FinishedAt = &finishedAt
-				// // task.Result = nil
+				finishedAt := time.Now().UTC()
+				t.Status = Done
+				t.StartedAt = &startedAt
+				t.FinishedAt = &finishedAt
+				// task.Result = nil
 			}
 			w.log.Debug("save task", "task", t)
 			if err := w.repository.Save(tx, t); err != nil {
@@ -175,7 +175,7 @@ func (w *Worker[T]) process() error {
 	}
 }
 
-func (w *Worker[T]) deleteOld() error {
+func (w *Worker) deleteOld() error {
 	w.log.Debug("deleteOld")
 	return barngo.RunInTransaction(w.db, func(tx *sql.Tx) error {
 		m := time.Now().UTC().Add(-30 * 24 * time.Hour)
