@@ -17,7 +17,9 @@ func NewPostgresTaskRepository(config ...TaskQueryConfig) TaskRepository {
 	if len(config) > 0 {
 		c = &config[0]
 	} else {
-		c = &TaskQueryConfig{}
+		c1 := TaskModelMeta(new(Task))
+		c = &c1
+		// c = &TaskQueryConfig{}
 	}
 	r := &PostgresTaskRepository{
 		config: *c,

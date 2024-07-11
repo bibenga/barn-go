@@ -117,6 +117,34 @@ func TestCreate(t *testing.T) {
 	assert.Equal(count, 1)
 }
 
+func TestCreate2(t *testing.T) {
+	assert := require.New(t)
+
+	db := setup(t)
+
+	repository := NewPostgresTaskRepository2[Task]()
+
+	err := barngo.RunInTransaction(db, func(tx *sql.Tx) error {
+		t := Task{
+			Func: "sentEmail",
+			Args: map[string]any{"str": "str", "int": 12},
+		}
+		if err := repository.Create(tx, &t); err != nil {
+			return err
+		}
+		assert.Greater(t.Id, 0)
+		return nil
+	})
+	assert.NoError(err)
+
+	row := db.QueryRow("select count(*) from barn_task")
+	assert.NoError(row.Err())
+	assert.NotNil(row)
+	var count int
+	assert.NoError(row.Scan(&count))
+	assert.Equal(count, 1)
+}
+
 func TestFindNext(t *testing.T) {
 	assert := require.New(t)
 
@@ -138,6 +166,44 @@ func TestFindNext(t *testing.T) {
 		} else {
 			assert.NotNil(f)
 			assert.Equal(f.Id, t.Id)
+		}
+		return nil
+	})
+	assert.NoError(err)
+
+	row := db.QueryRow("select count(*) from barn_task")
+	assert.NoError(row.Err())
+	assert.NotNil(row)
+	var count int
+	assert.NoError(row.Scan(&count))
+	assert.Equal(count, 1)
+}
+
+func TestFindNex2(t *testing.T) {
+	assert := require.New(t)
+
+	db := setup(t)
+
+	repository := NewPostgresTaskRepository2[Task]()
+
+	err := barngo.RunInTransaction(db, func(tx *sql.Tx) error {
+		tt := time.Now().UTC()
+		e := "err"
+		t := Task{
+			Func:      "sentEmail",
+			Args:      map[string]any{"str": "str", "int": 12},
+			StartedAt: &tt,
+			Error:     &e,
+		}
+		if err := repository.Create(tx, &t); err != nil {
+			return err
+		}
+
+		if f, err := repository.FindNext(tx); err != nil {
+			return err
+		} else {
+			assert.NotNil(f)
+			// assert.Equal(f.Id, t.Id)
 		}
 		return nil
 	})
