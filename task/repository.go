@@ -177,8 +177,9 @@ func CamelToSnake(name string) string {
 }
 
 func SetFieldValue(field reflect.Value, value any) {
+	vValue := reflect.ValueOf(value)
 	if field.Kind() == reflect.Pointer {
-		if value == nil {
+		if value == nil || (vValue.Kind() == reflect.Pointer && vValue.IsNil()) {
 			field.SetZero()
 		} else if field.IsNil() {
 			field.Set(reflect.New(field.Type().Elem()))
@@ -187,10 +188,9 @@ func SetFieldValue(field reflect.Value, value any) {
 			SetFieldValue(field.Elem(), value)
 		}
 	} else {
-		if value == nil {
+		if value == nil || (vValue.Kind() == reflect.Pointer && vValue.IsNil()) {
 			field.SetZero()
 		} else {
-			vValue := reflect.ValueOf(value)
 			if vValue.Type().AssignableTo(field.Type()) {
 				field.Set(vValue)
 			} else if vValue.Type().ConvertibleTo(field.Type()) {
