@@ -9,7 +9,6 @@ import (
 
 	barngo "github.com/bibenga/barn-go"
 	"github.com/bibenga/barn-go/examples"
-	"github.com/bibenga/barn-go/task"
 )
 
 func main() {
@@ -18,9 +17,9 @@ func main() {
 	db := examples.InitDb(false)
 	defer db.Close()
 
-	worker := task.NewWorker2[task.Task](
+	worker := barngo.NewWorker[barngo.Task](
 		db,
-		task.WorkerConfig2[task.Task]{
+		barngo.WorkerConfig[barngo.Task]{
 			Cron: "*/5 * * * * *",
 		},
 	)
@@ -33,7 +32,7 @@ func main() {
 			return err
 		}
 
-		task1 := task.Task{
+		task1 := barngo.Task{
 			Func: "sentEmail",
 			Args: map[string]any{"str": "str", "int": 12},
 		}

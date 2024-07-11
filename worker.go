@@ -1,4 +1,4 @@
-package task
+package barngo
 
 import (
 	"context"
@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/adhocore/gronx"
-	barngo "github.com/bibenga/barn-go"
 )
 
 const IgnoreResult = "IgnoreResult"
@@ -38,7 +37,7 @@ type Worker[T any] struct {
 	log     *slog.Logger
 	handler TaskHandler[T]
 	db      *sql.DB
-	meta    barngo.TableMeta
+	meta    TableMeta
 	cron    string
 	running atomic.Bool
 	cancel  context.CancelFunc
@@ -71,7 +70,7 @@ func NewWorker[T any](db *sql.DB, config ...WorkerConfig[T]) *Worker[T] {
 	if handler == nil {
 		handler = dummyTaskHandler[T]
 	}
-	meta := barngo.GetTableMeta(new(Task))
+	meta := GetTableMeta(new(Task))
 	w := Worker[T]{
 		log:     log,
 		handler: handler,
@@ -146,7 +145,7 @@ func (w *Worker[T]) process() error {
 	w.log.Debug("process")
 	c := &w.meta
 	for {
-		err := barngo.RunInTransaction(w.db, func(tx *sql.Tx) error {
+		err := RunInTransaction(w.db, func(tx *sql.Tx) error {
 			t, err := w.FindNext(tx)
 			if err != nil {
 				return err
@@ -161,18 +160,18 @@ func (w *Worker[T]) process() error {
 				w.log.Error("the task is processed with error", "error", err)
 				finishedAt := time.Now().UTC()
 				errorMessage := err.Error()
-				barngo.SetFieldValue(tv.FieldByName(c.FieldsByName["Status"].StructName), Failed)
-				barngo.SetFieldValue(tv.FieldByName(c.FieldsByName["StartedAt"].StructName), startedAt)
-				barngo.SetFieldValue(tv.FieldByName(c.FieldsByName["FinishedAt"].StructName), finishedAt)
-				barngo.SetFieldValue(tv.FieldByName(c.FieldsByName["Error"].StructName), errorMessage)
+				SetFieldValue(tv.FieldByName(c.FieldsByName["Status"].StructName), Failed)
+				SetFieldValue(tv.FieldByName(c.FieldsByName["StartedAt"].StructName), startedAt)
+				SetFieldValue(tv.FieldByName(c.FieldsByName["FinishedAt"].StructName), finishedAt)
+				SetFieldValue(tv.FieldByName(c.FieldsByName["Error"].StructName), errorMessage)
 			} else {
 				w.log.Info("the task is processed with success")
 				finishedAt := time.Now().UTC()
-				barngo.SetFieldValue(tv.FieldByName(c.FieldsByName["Status"].StructName), Done)
-				barngo.SetFieldValue(tv.FieldByName(c.FieldsByName["StartedAt"].StructName), startedAt)
-				barngo.SetFieldValue(tv.FieldByName(c.FieldsByName["FinishedAt"].StructName), finishedAt)
+				SetFieldValue(tv.FieldByName(c.FieldsByName["Status"].StructName), Done)
+				SetFieldValue(tv.FieldByName(c.FieldsByName["StartedAt"].StructName), startedAt)
+				SetFieldValue(tv.FieldByName(c.FieldsByName["FinishedAt"].StructName), finishedAt)
 				if result != IgnoreResult {
-					barngo.SetFieldValue(tv.FieldByName(c.FieldsByName["Result"].StructName), result)
+					SetFieldValue(tv.FieldByName(c.FieldsByName["Result"].StructName), result)
 				}
 			}
 			w.log.Debug("save task", "task", t)
@@ -192,7 +191,7 @@ func (w *Worker[T]) process() error {
 
 func (w *Worker[T]) deleteOld() error {
 	w.log.Debug("deleteOld")
-	return barngo.RunInTransaction(w.db, func(tx *sql.Tx) error {
+	return RunInTransaction(w.db, func(tx *sql.Tx) error {
 		m := time.Now().UTC().Add(-30 * 24 * time.Hour)
 		deleted, err := w.DeleteOld(tx, m)
 		w.log.Debug("the old tasks is deleted", "count", deleted)
@@ -274,7 +273,7 @@ func (w *Worker[T]) FindNext(tx *sql.Tx) (*T, error) {
 				return nil, err
 			}
 		}
-		barngo.SetFieldValue(v.FieldByName(f.StructName), value)
+		SetFieldValue(v.FieldByName(f.StructName), value)
 	}
 
 	return t, nil
@@ -300,25 +299,25 @@ func (w *Worker[T]) Create(tx *sql.Tx, t *T) error {
 			if v, ok := value.(time.Time); ok {
 				if v.IsZero() {
 					value = time.Now().UTC()
-					barngo.SetFieldValue(tv.FieldByName(f.StructName), value)
+					SetFieldValue(tv.FieldByName(f.StructName), value)
 				}
 			} else if v, ok := value.(*time.Time); ok {
 				if v == nil {
 					// v1 := time.Now().UTC()
 					// value = &v1
 					value = time.Now().UTC()
-					barngo.SetFieldValue(tv.FieldByName(f.StructName), value)
+					SetFieldValue(tv.FieldByName(f.StructName), value)
 				}
 			}
 		} else if f.Name == "Status" {
 			if v, ok := value.(Status); ok {
 				if v == "" {
 					value = Queued
-					barngo.SetFieldValue(tv.FieldByName(f.StructName), value)
+					SetFieldValue(tv.FieldByName(f.StructName), value)
 				}
 			} else {
 				value = Queued
-				barngo.SetFieldValue(tv.FieldByName(f.StructName), value)
+				SetFieldValue(tv.FieldByName(f.StructName), value)
 			}
 
 		} else if f.Name == "Args" || f.Name == "Result" {
@@ -353,7 +352,7 @@ func (w *Worker[T]) Create(tx *sql.Tx, t *T) error {
 
 	var id any
 	err = stmt.QueryRow(values...).Scan(&id)
-	barngo.SetFieldValue(tv.FieldByName(c.FieldsByName["Id"].StructName), id)
+	SetFieldValue(tv.FieldByName(c.FieldsByName["Id"].StructName), id)
 
 	return err
 }
@@ -379,25 +378,25 @@ func (w *Worker[T]) Save(tx *sql.Tx, t *T) error {
 			if v, ok := value.(time.Time); ok {
 				if v.IsZero() {
 					value = time.Now().UTC()
-					barngo.SetFieldValue(tv.FieldByName(f.StructName), value)
+					SetFieldValue(tv.FieldByName(f.StructName), value)
 				}
 			} else if v, ok := value.(*time.Time); ok {
 				if v == nil {
 					// v1 := time.Now().UTC()
 					// value = &v1
 					value = time.Now().UTC()
-					barngo.SetFieldValue(tv.FieldByName(f.StructName), value)
+					SetFieldValue(tv.FieldByName(f.StructName), value)
 				}
 			}
 		} else if f.Name == "Status" {
 			if v, ok := value.(Status); ok {
 				if v == "" {
 					value = Queued
-					barngo.SetFieldValue(tv.FieldByName(f.StructName), value)
+					SetFieldValue(tv.FieldByName(f.StructName), value)
 				}
 			} else {
 				value = Queued
-				barngo.SetFieldValue(tv.FieldByName(f.StructName), value)
+				SetFieldValue(tv.FieldByName(f.StructName), value)
 			}
 
 		} else if f.Name == "Args" || f.Name == "Result" {

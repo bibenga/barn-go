@@ -1,4 +1,4 @@
-package task
+package barngo
 
 import (
 	"database/sql"

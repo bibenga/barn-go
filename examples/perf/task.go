@@ -7,13 +7,12 @@ import (
 
 	barngo "github.com/bibenga/barn-go"
 	"github.com/bibenga/barn-go/examples"
-	"github.com/bibenga/barn-go/task"
 )
 
 const count = 1000
 const progress = 100
 
-func insert(db *sql.DB, repository *task.Worker[task.Task]) {
+func insert(db *sql.DB, repository *barngo.Worker[barngo.Task]) {
 	started := time.Now().UTC()
 	for i := 0; i < count; i++ {
 		if progress > 0 {
@@ -23,7 +22,7 @@ func insert(db *sql.DB, repository *task.Worker[task.Task]) {
 		}
 		err := barngo.RunInTransaction(db, func(tx *sql.Tx) error {
 			created := time.Now().UTC()
-			m := task.Task{
+			m := barngo.Task{
 				Func: "sendEmails",
 				Args: map[string]any{"created": created, "i": i},
 			}
@@ -41,7 +40,7 @@ func insert(db *sql.DB, repository *task.Worker[task.Task]) {
 	slog.Info("insert", "duration", d, "n/s", float64(count)/d.Seconds())
 }
 
-func process(db *sql.DB, repository *task.Worker[task.Task]) {
+func process(db *sql.DB, repository *barngo.Worker[barngo.Task]) {
 	started := time.Now().UTC()
 	i := 0
 	for {
@@ -59,7 +58,7 @@ func process(db *sql.DB, repository *task.Worker[task.Task]) {
 				return sql.ErrNoRows
 			}
 			i++
-			t.Status = task.Done
+			t.Status = barngo.Done
 			if err := repository.Save(tx, t); err != nil {
 				return err
 			}
@@ -83,7 +82,7 @@ func main() {
 	db := examples.InitDb(false)
 	defer db.Close()
 
-	repository := task.NewWorker[task.Task](db)
+	repository := barngo.NewWorker[barngo.Task](db)
 
 	err := barngo.RunInTransaction(db, func(tx *sql.Tx) error {
 		if err := repository.CreateTable(tx); err != nil {

@@ -1,12 +1,12 @@
-package scheduler
+package barngo
 
 import (
 	"database/sql"
 	"fmt"
 	"log/slog"
 	"testing"
+	"time"
 
-	barngo "github.com/bibenga/barn-go"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/jackc/pgx/v5/tracelog"
@@ -42,7 +42,7 @@ func newDb(dsn string) (*sql.DB, error) {
 }
 
 func newTestDb() (*sql.DB, error) {
-	// connect to some db
+	// connect to themain db
 	db, err := newDb(dsn)
 	if err != nil {
 		return nil, err
@@ -53,7 +53,8 @@ func newTestDb() (*sql.DB, error) {
 	if _, err := db.Exec(createDbQuery); err != nil {
 		return nil, err
 	}
-	// connect to test db
+
+	// connect to the test db
 	db, err = newDb(testDsn)
 	if err != nil {
 		return nil, err
@@ -61,7 +62,7 @@ func newTestDb() (*sql.DB, error) {
 	return db, nil
 }
 
-func setup(t *testing.T) *sql.DB {
+func setupTestDb(t *testing.T) *sql.DB {
 	t.Helper()
 	assert := require.New(t)
 
@@ -70,8 +71,12 @@ func setup(t *testing.T) *sql.DB {
 	assert.NotNil(db)
 	assert.NoError(db.Ping())
 
-	scheduler := NewScheduler[Schedule](db)
-	err = barngo.RunInTransaction(db, func(tx *sql.Tx) error {
+	err = RunInTransaction(db, func(tx *sql.Tx) error {
+		worker := NewWorker[Task](db)
+		if err := worker.CreateTable(tx); err != nil {
+			return err
+		}
+		scheduler := NewScheduler[Schedule](db)
 		if err := scheduler.CreateTable(tx); err != nil {
 			return err
 		}
@@ -88,19 +93,19 @@ func setup(t *testing.T) *sql.DB {
 	return db
 }
 
-func TestSchedulerCreate(t *testing.T) {
+func TestWorkerCreate(t *testing.T) {
 	assert := require.New(t)
 
-	db := setup(t)
+	db := setupTestDb(t)
 
-	scheduler := NewScheduler[Schedule](db)
+	worker := NewWorker[Task](db)
 
-	err := barngo.RunInTransaction(db, func(tx *sql.Tx) error {
-		t := Schedule{
+	err := RunInTransaction(db, func(tx *sql.Tx) error {
+		t := Task{
 			Func: "sentEmail",
 			Args: map[string]any{"str": "str", "int": 12},
 		}
-		if err := scheduler.Create(tx, &t); err != nil {
+		if err := worker.Create(tx, &t); err != nil {
 			return err
 		}
 		assert.Greater(t.Id, 0)
@@ -108,7 +113,76 @@ func TestSchedulerCreate(t *testing.T) {
 	})
 	assert.NoError(err)
 
-	row := db.QueryRow("select count(*) from barn_schedule")
+	row := db.QueryRow("select count(*) from barn_task")
+	assert.NoError(row.Err())
+	assert.NotNil(row)
+	var count int
+	assert.NoError(row.Scan(&count))
+	assert.Equal(count, 1)
+}
+
+func TestWorkerFindNext(t *testing.T) {
+	assert := require.New(t)
+
+	db := setupTestDb(t)
+
+	worker := NewWorker[Task](db)
+
+	err := RunInTransaction(db, func(tx *sql.Tx) error {
+		t := Task{
+			Func: "sentEmail",
+			Args: map[string]any{"str": "str", "int": 12},
+		}
+		if err := worker.Create(tx, &t); err != nil {
+			return err
+		}
+
+		if f, err := worker.FindNext(tx); err != nil {
+			return err
+		} else {
+			assert.NotNil(f)
+			assert.Equal(f.Id, t.Id)
+		}
+		return nil
+	})
+	assert.NoError(err)
+
+	row := db.QueryRow("select count(*) from barn_task")
+	assert.NoError(row.Err())
+	assert.NotNil(row)
+	var count int
+	assert.NoError(row.Scan(&count))
+	assert.Equal(count, 1)
+}
+
+func TestWorkerFindNextPending(t *testing.T) {
+	assert := require.New(t)
+
+	db := setupTestDb(t)
+
+	worker := NewWorker[Task](db)
+
+	err := RunInTransaction(db, func(tx *sql.Tx) error {
+		t := Task{
+			RunAt: time.Now().UTC().Add(1 * time.Hour),
+			Func:  "sentEmail",
+			Args:  map[string]any{"str": "str", "int": 12},
+		}
+		if err := worker.Create(tx, &t); err != nil {
+			return err
+		}
+
+		if f, err := worker.FindNext(tx); err != nil {
+			return err
+		} else {
+			assert.Nil(f)
+		}
+
+		return nil
+	})
+	assert.NoError(err)
+
+	row := db.QueryRow("select count(*) from barn_task")
 	assert.NoError(row.Err())
 	assert.NotNil(row)
 	var count int

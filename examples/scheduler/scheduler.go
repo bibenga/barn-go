@@ -9,7 +9,6 @@ import (
 
 	barngo "github.com/bibenga/barn-go"
 	"github.com/bibenga/barn-go/examples"
-	"github.com/bibenga/barn-go/scheduler"
 )
 
 func main() {
@@ -18,9 +17,9 @@ func main() {
 	db := examples.InitDb(false)
 	defer db.Close()
 
-	worker := scheduler.NewScheduler[scheduler.Schedule](
+	worker := barngo.NewScheduler[barngo.Schedule](
 		db,
-		scheduler.SchedulerConfig[scheduler.Schedule]{
+		barngo.SchedulerConfig[barngo.Schedule]{
 			Cron: "*/5 * * * * *",
 		},
 	)
@@ -34,7 +33,7 @@ func main() {
 		}
 
 		cron1 := "*/5 * * * * *"
-		schedule := scheduler.Schedule{
+		schedule := barngo.Schedule{
 			Name:     "olala1",
 			IsActive: true,
 			Cron:     &cron1,

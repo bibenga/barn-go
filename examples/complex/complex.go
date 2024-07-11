@@ -10,29 +10,27 @@ import (
 
 	barngo "github.com/bibenga/barn-go"
 	"github.com/bibenga/barn-go/examples"
-	"github.com/bibenga/barn-go/scheduler"
-	"github.com/bibenga/barn-go/task"
 )
 
-var sworker *scheduler.Scheduler[scheduler.Schedule]
-var tworker *task.Worker[task.Task]
-var registry *task.TaskRegistry
+var registry *barngo.TaskRegistry
+var worker *barngo.Worker[barngo.Task]
+var scheduler *barngo.Scheduler[barngo.Schedule]
 
-func scheduleHandler(tx *sql.Tx, s *scheduler.Schedule) error {
-	return tworker.Create(tx, &task.Task{
-		RunAt: *s.NextRunAt,
-		Func:  s.Func,
-		Args:  s.Args,
-	})
-}
-
-func taskHandler(tx *sql.Tx, t *task.Task) (any, error) {
+func taskHandler(tx *sql.Tx, t *barngo.Task) (any, error) {
 	result, err := registry.Call(tx, t.Func, t.Args)
 	if err != nil {
 		return nil, err
 	}
 	t.Result = result
-	return task.IgnoreResult, nil
+	return barngo.IgnoreResult, nil
+}
+
+func scheduleHandler(tx *sql.Tx, s *barngo.Schedule) error {
+	return worker.Create(tx, &barngo.Task{
+		RunAt: *s.NextRunAt,
+		Func:  s.Func,
+		Args:  s.Args,
+	})
 }
 
 func main() {
@@ -41,23 +39,23 @@ func main() {
 	db := examples.InitDb(false)
 	defer db.Close()
 
-	registry = task.NewTaskRegistry()
+	registry = barngo.NewTaskRegistry()
 	registry.Register("sendNotifications", func(tx *sql.Tx, args any) (any, error) {
 		slog.Info("CALLED: sendNotifications", "args", args)
 		return true, nil
 	})
 
-	sworker = scheduler.NewScheduler[scheduler.Schedule](
+	scheduler = barngo.NewScheduler[barngo.Schedule](
 		db,
-		scheduler.SchedulerConfig[scheduler.Schedule]{
+		barngo.SchedulerConfig[barngo.Schedule]{
 			Cron:    "*/10 * * * * *",
 			Handler: scheduleHandler,
 		},
 	)
 
-	tworker = task.NewWorker[task.Task](
+	worker = barngo.NewWorker[barngo.Task](
 		db,
-		task.WorkerConfig[task.Task]{
+		barngo.WorkerConfig[barngo.Task]{
 			Cron:    "*/10 * * * * *",
 			Handler: taskHandler,
 		},
@@ -69,32 +67,32 @@ func main() {
 			return err
 		}
 
-		if err := sworker.CreateTable(tx); err != nil {
+		if err := scheduler.CreateTable(tx); err != nil {
 			return err
 		}
-		if err := sworker.DeleteAll(tx); err != nil {
+		if err := scheduler.DeleteAll(tx); err != nil {
 			return err
 		}
 
 		cron1 := "*/5 * * * * *"
-		schedule := scheduler.Schedule{
+		schedule := barngo.Schedule{
 			Name: "sendNotifications",
 			Cron: &cron1,
 			Func: "sendNotifications",
 			Args: map[string]any{"type": "welcome"},
 		}
-		if err := sworker.Create(tx, &schedule); err != nil {
+		if err := scheduler.Create(tx, &schedule); err != nil {
 			return err
 		}
 
-		if err := tworker.CreateTable(tx); err != nil {
+		if err := worker.CreateTable(tx); err != nil {
 			return err
 		}
-		task := task.Task{
+		task := barngo.Task{
 			Func: "sendNotifications",
 			Args: map[string]any{"type": "started"},
 		}
-		if err := tworker.Create(tx, &task); err != nil {
+		if err := worker.Create(tx, &task); err != nil {
 			return err
 		}
 
@@ -106,8 +104,8 @@ func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	sworker.StartContext(ctx)
-	tworker.StartContext(ctx)
+	scheduler.StartContext(ctx)
+	worker.StartContext(ctx)
 
 	osSignal := make(chan os.Signal, 1)
 	signal.Notify(osSignal, os.Interrupt)
@@ -116,6 +114,6 @@ func main() {
 
 	cancel()
 	time.Sleep(1 * time.Second)
-	sworker.Stop()
-	tworker.Stop()
+	scheduler.Stop()
+	worker.Stop()
 }

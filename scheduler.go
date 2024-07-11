@@ -1,4 +1,4 @@
-package scheduler
+package barngo
 
 import (
 	"context"
@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/adhocore/gronx"
-	barngo "github.com/bibenga/barn-go"
 )
 
 type SchedulerHandler[S any] func(tx *sql.Tx, schedule *S) error
@@ -36,7 +35,7 @@ type Scheduler[S any] struct {
 	log     *slog.Logger
 	handler SchedulerHandler[S]
 	db      *sql.DB
-	meta    barngo.TableMeta
+	meta    TableMeta
 	running atomic.Bool
 	cancel  context.CancelFunc
 	stoped  sync.WaitGroup
@@ -66,7 +65,7 @@ func NewScheduler[S any](db *sql.DB, config ...SchedulerConfig[S]) *Scheduler[S]
 	if handler == nil {
 		handler = dummySchedulerHandler[S]
 	}
-	meta := barngo.GetTableMeta(new(S))
+	meta := GetTableMeta(new(S))
 	scheduler := Scheduler[S]{
 		log:     log,
 		handler: handler,
@@ -146,7 +145,7 @@ func (w *Scheduler[S]) processTasks() error {
 
 	w.log.Info("process")
 
-	err := barngo.RunInTransaction(w.db, func(tx *sql.Tx) error {
+	err := RunInTransaction(w.db, func(tx *sql.Tx) error {
 		schedules, err := w.FindAllActiveAndUnprocessed(tx, time.Now().UTC())
 		if err != nil {
 			return err
@@ -178,7 +177,7 @@ func (w *Scheduler[S]) processTasks() error {
 			if nextRunAt == nil && cron == nil {
 				w.log.Debug("the schedule is not valid")
 				// dbSchedule.IsActive = false
-				barngo.SetFieldValue(tv.FieldByName(c.FieldsByName["IsActive"].StructName), false)
+				SetFieldValue(tv.FieldByName(c.FieldsByName["IsActive"].StructName), false)
 				if err := w.Save(tx, dbSchedule); err != nil {
 					return err
 				}
@@ -191,21 +190,21 @@ func (w *Scheduler[S]) processTasks() error {
 				w.log.Info("the schedule is one shot")
 				// dbSchedule.IsActive = false
 				// dbSchedule.LastRunAt = dbSchedule.NextRunAt
-				barngo.SetFieldValue(tv.FieldByName(c.FieldsByName["IsActive"].StructName), false)
-				barngo.SetFieldValue(tv.FieldByName(c.FieldsByName["LastRunAt"].StructName), lastRunAt)
+				SetFieldValue(tv.FieldByName(c.FieldsByName["IsActive"].StructName), false)
+				SetFieldValue(tv.FieldByName(c.FieldsByName["LastRunAt"].StructName), lastRunAt)
 			} else {
 				if nextTs, err := gronx.NextTick(*cron, false); err != nil {
 					w.log.Info("the schedule has an invalid cron expression", "error", err)
 					// dbSchedule.IsActive = false
 					// dbSchedule.LastRunAt = dbSchedule.NextRunAt
-					barngo.SetFieldValue(tv.FieldByName(c.FieldsByName["IsActive"].StructName), false)
-					barngo.SetFieldValue(tv.FieldByName(c.FieldsByName["LastRunAt"].StructName), lastRunAt)
+					SetFieldValue(tv.FieldByName(c.FieldsByName["IsActive"].StructName), false)
+					SetFieldValue(tv.FieldByName(c.FieldsByName["LastRunAt"].StructName), lastRunAt)
 				} else {
 					w.log.Info("the schedule is planned", "time", nextTs)
 					// dbSchedule.LastRunAt = dbSchedule.NextRunAt
 					// dbSchedule.NextRunAt = &nextTs
-					barngo.SetFieldValue(tv.FieldByName(c.FieldsByName["NextRunAt"].StructName), nextTs)
-					barngo.SetFieldValue(tv.FieldByName(c.FieldsByName["LastRunAt"].StructName), lastRunAt)
+					SetFieldValue(tv.FieldByName(c.FieldsByName["NextRunAt"].StructName), nextTs)
+					SetFieldValue(tv.FieldByName(c.FieldsByName["LastRunAt"].StructName), lastRunAt)
 				}
 			}
 			if err := w.Save(tx, dbSchedule); err != nil {
@@ -290,7 +289,7 @@ func (w *Scheduler[S]) FindAllActiveAndUnprocessed(tx *sql.Tx, moment time.Time)
 					return nil, err
 				}
 			}
-			barngo.SetFieldValue(v.FieldByName(f.StructName), value)
+			SetFieldValue(v.FieldByName(f.StructName), value)
 		}
 		schedules = append(schedules, schedule)
 	}
@@ -345,7 +344,7 @@ func (w *Scheduler[S]) Create(tx *sql.Tx, schedule *S) error {
 
 	var id any
 	err = stmt.QueryRow(values...).Scan(&id)
-	barngo.SetFieldValue(tv.FieldByName(c.FieldsByName["Id"].StructName), id)
+	SetFieldValue(tv.FieldByName(c.FieldsByName["Id"].StructName), id)
 
 	return err
 }
