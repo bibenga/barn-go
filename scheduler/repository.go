@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"log/slog"
 	"time"
+
+	"github.com/bibenga/barn-go/task"
 )
 
 const DefaultTableName = "barn_schedule"
@@ -26,17 +28,25 @@ type ScheduleQueryConfig struct {
 	LastRunAtField string
 	FuncField      string
 	ArgsField      string
+
+	// TableName       string
+	Fields       []task.FieldConfig
+	FieldsByName map[string]task.FieldConfig
 }
 
 type Schedule struct {
-	Id        int
-	Name      string
-	IsActive  bool
-	Cron      *string
-	NextRunAt *time.Time
-	LastRunAt *time.Time
-	Func      string
-	Args      any
+	Id        int        `barn:""`
+	Name      string     `barn:""`
+	IsActive  bool       `barn:""`
+	Cron      *string    `barn:""`
+	NextRunAt *time.Time `barn:""`
+	LastRunAt *time.Time `barn:""`
+	Func      string     `barn:""`
+	Args      any        `barn:""`
+}
+
+func (e Schedule) TableName() string {
+	return "barn_schedule"
 }
 
 func (e Schedule) LogValue() slog.Value {

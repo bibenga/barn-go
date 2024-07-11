@@ -31,9 +31,9 @@ const DefaultResultField = "result"
 const DefaultErrorField = "error"
 
 type FieldConfig struct {
-	// Field  reflect.StructField
-	Name   string
-	DbName string
+	Name       string
+	StructName string
+	DbName     string
 }
 
 type TaskQueryConfig struct {
@@ -49,18 +49,8 @@ type TaskQueryConfig struct {
 	ErrorField      string
 
 	// TableName       string
-	Id         FieldConfig
-	RunAt      FieldConfig
-	Func       FieldConfig
-	Args       FieldConfig
-	Status     FieldConfig
-	StartedAt  FieldConfig
-	FinishedAt FieldConfig
-	Result     FieldConfig
-	Error      FieldConfig
-
-	fields   map[string]string
-	dbFields map[string]string
+	Fields       []FieldConfig
+	FieldsByName map[string]FieldConfig
 }
 
 type Tabler interface {
@@ -68,15 +58,15 @@ type Tabler interface {
 }
 
 type Task struct {
-	Id         int        `barn:"id"`
+	Id         int        `barn:""`
 	RunAt      time.Time  `barn:""`
-	Func       string     `barn:"func"`
-	Args       any        `barn:"Args args"`
-	Status     Status     `barn:"status"`
-	StartedAt  *time.Time `barn:"started_at"`
-	FinishedAt *time.Time `barn:"finished_at"`
-	Result     any        `barn:"result"`
-	Error      *string    `barn:"error"`
+	Func       string     `barn:""`
+	Args       any        `barn:""`
+	Status     Status     `barn:""`
+	StartedAt  *time.Time `barn:""`
+	FinishedAt *time.Time `barn:""`
+	Result     any        `barn:""`
+	Error      *string    `barn:""`
 }
 
 func (e Task) TableName() string {
@@ -119,7 +109,6 @@ type TaskRepository interface {
 type TaskRepository2[T any] interface {
 	FindNext(tx *sql.Tx) (*T, error)
 	Create(tx *sql.Tx, task *T) error
-	// SetResultAndSave(tx *sql.Tx, t *T, status Status, startedAt time.Time, finishedAt time.Time, result any, err string) error
 	Save(tx *sql.Tx, task *T) error
 	DeleteOld(tx *sql.Tx, t time.Time) (int, error)
 }
@@ -133,7 +122,9 @@ func TaskModelMeta(t interface{}) TaskQueryConfig {
 		panic(errors.New("invalid value"))
 	}
 
-	meta := TaskQueryConfig{}
+	meta := TaskQueryConfig{
+		FieldsByName: make(map[string]FieldConfig),
+	}
 	if tabler, ok := t.(Tabler); ok {
 		meta.TableName = tabler.TableName()
 	} else {
@@ -141,7 +132,10 @@ func TaskModelMeta(t interface{}) TaskQueryConfig {
 	}
 	fields := reflect.VisibleFields(tt)
 	for _, f := range fields {
-		tag := f.Tag.Get("barn")
+		tag, ok := f.Tag.Lookup("barn")
+		if !ok {
+			continue
+		}
 		var fieldName, dbName string
 		if tag == "" {
 			fieldName = f.Name
@@ -158,30 +152,18 @@ func TaskModelMeta(t interface{}) TaskQueryConfig {
 				panic(fmt.Errorf("invalid field tag value: %s - %s", f.Name, tag))
 			}
 		}
-		switch {
-		case fieldName == "Id":
-			meta.Id = FieldConfig{Name: f.Name, DbName: dbName}
-		case fieldName == "RunAt":
-			meta.RunAt = FieldConfig{Name: f.Name, DbName: dbName}
-		case fieldName == "Func":
-			meta.Func = FieldConfig{Name: f.Name, DbName: dbName}
-		case fieldName == "Args":
-			meta.Args = FieldConfig{Name: f.Name, DbName: dbName}
-		case fieldName == "Status":
-			meta.Status = FieldConfig{Name: f.Name, DbName: dbName}
-		case fieldName == "StartedAt":
-			meta.StartedAt = FieldConfig{Name: f.Name, DbName: dbName}
-		case fieldName == "FinishedAt":
-			meta.FinishedAt = FieldConfig{Name: f.Name, DbName: dbName}
-		case fieldName == "Result":
-			meta.Result = FieldConfig{Name: f.Name, DbName: dbName}
-		case fieldName == "Error":
-			meta.Error = FieldConfig{Name: f.Name, DbName: dbName}
+		fieldConfig := FieldConfig{
+			Name:       fieldName,
+			StructName: f.Name,
+			DbName:     dbName,
 		}
+		meta.Fields = append(meta.Fields, fieldConfig)
+		meta.FieldsByName[fieldName] = fieldConfig
 	}
-	if meta.Id.Name == "" || meta.Id.DbName == "" {
-		panic(errors.New("id field is not found"))
-	}
+	// TODO: check required fields
+	// if meta.Id.Name == "" || meta.Id.DbName == "" {
+	// 	panic(errors.New("id field is not found"))
+	// }
 	return meta
 }
 
@@ -201,6 +183,8 @@ func SetFieldValue(field reflect.Value, value any) {
 		} else if field.IsNil() {
 			field.Set(reflect.New(field.Type().Elem()))
 			SetFieldValue(field.Elem(), value)
+		} else {
+			SetFieldValue(field.Elem(), value)
 		}
 	} else {
 		if value == nil {
@@ -212,7 +196,7 @@ func SetFieldValue(field reflect.Value, value any) {
 			} else if vValue.Type().ConvertibleTo(field.Type()) {
 				field.Set(vValue.Convert(field.Type()))
 			} else {
-				panic(errors.New("jopa"))
+				panic(errors.New("can't set value"))
 			}
 		}
 	}

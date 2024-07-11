@@ -133,6 +133,11 @@ func TestCreate2(t *testing.T) {
 			return err
 		}
 		assert.Greater(t.Id, 0)
+
+		if err := repository.Save(tx, &t); err != nil {
+			return err
+		}
+
 		return nil
 	})
 	assert.NoError(err)
@@ -187,13 +192,15 @@ func TestFindNex2(t *testing.T) {
 	repository := NewPostgresTaskRepository2[Task]()
 
 	err := barngo.RunInTransaction(db, func(tx *sql.Tx) error {
-		tt := time.Now().UTC()
-		e := "err"
+		// tt := time.Now().UTC()
+		// e := "err"
 		t := Task{
-			Func:      "sentEmail",
-			Args:      map[string]any{"str": "str", "int": 12},
-			StartedAt: &tt,
-			Error:     &e,
+			Func:   "sentEmail",
+			Args:   map[string]any{"str": "str", "int": 12},
+			RunAt:  time.Now().UTC(),
+			Status: Queued,
+			// StartedAt: &tt,
+			// Error:     &e,
 		}
 		if err := repository.Create(tx, &t); err != nil {
 			return err
@@ -205,6 +212,7 @@ func TestFindNex2(t *testing.T) {
 			assert.NotNil(f)
 			// assert.Equal(f.Id, t.Id)
 		}
+
 		return nil
 	})
 	assert.NoError(err)
