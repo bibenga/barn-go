@@ -146,7 +146,7 @@ func (w *Scheduler[S]) processTasks() error {
 	w.log.Info("process")
 
 	err := RunInTransaction(w.db, func(tx *sql.Tx) error {
-		schedules, err := w.FindAllActiveAndUnprocessed(tx, time.Now().UTC())
+		schedules, err := w.FindAllActive(tx, time.Now().UTC())
 		if err != nil {
 			return err
 		}
@@ -158,7 +158,7 @@ func (w *Scheduler[S]) processTasks() error {
 
 			lastRunAt := time.Now().UTC()
 
-			nextRunAtV := tv.FieldByName(c.FieldsByName["NextRunAt"].StructName).Interface()
+			nextRunAtV := tv.FieldByName(c.FieldsByName["NextRunAt"].AttrName).Interface()
 			var nextRunAt *time.Time
 			if val, ok := nextRunAtV.(time.Time); ok {
 				nextRunAt = &val
@@ -166,7 +166,7 @@ func (w *Scheduler[S]) processTasks() error {
 				nextRunAt = val
 			}
 
-			cronV := tv.FieldByName(c.FieldsByName["Cron"].StructName).Interface()
+			cronV := tv.FieldByName(c.FieldsByName["Cron"].AttrName).Interface()
 			var cron *string
 			if val, ok := cronV.(string); ok {
 				cron = &val
@@ -177,7 +177,7 @@ func (w *Scheduler[S]) processTasks() error {
 			if nextRunAt == nil && cron == nil {
 				w.log.Debug("the schedule is not valid")
 				// dbSchedule.IsActive = false
-				SetFieldValue(tv.FieldByName(c.FieldsByName["IsActive"].StructName), false)
+				SetFieldValue(tv.FieldByName(c.FieldsByName["IsActive"].AttrName), false)
 				if err := w.Save(tx, dbSchedule); err != nil {
 					return err
 				}
@@ -190,21 +190,21 @@ func (w *Scheduler[S]) processTasks() error {
 				w.log.Info("the schedule is one shot")
 				// dbSchedule.IsActive = false
 				// dbSchedule.LastRunAt = dbSchedule.NextRunAt
-				SetFieldValue(tv.FieldByName(c.FieldsByName["IsActive"].StructName), false)
-				SetFieldValue(tv.FieldByName(c.FieldsByName["LastRunAt"].StructName), lastRunAt)
+				SetFieldValue(tv.FieldByName(c.FieldsByName["IsActive"].AttrName), false)
+				SetFieldValue(tv.FieldByName(c.FieldsByName["LastRunAt"].AttrName), lastRunAt)
 			} else {
 				if nextTs, err := gronx.NextTick(*cron, false); err != nil {
 					w.log.Info("the schedule has an invalid cron expression", "error", err)
 					// dbSchedule.IsActive = false
 					// dbSchedule.LastRunAt = dbSchedule.NextRunAt
-					SetFieldValue(tv.FieldByName(c.FieldsByName["IsActive"].StructName), false)
-					SetFieldValue(tv.FieldByName(c.FieldsByName["LastRunAt"].StructName), lastRunAt)
+					SetFieldValue(tv.FieldByName(c.FieldsByName["IsActive"].AttrName), false)
+					SetFieldValue(tv.FieldByName(c.FieldsByName["LastRunAt"].AttrName), lastRunAt)
 				} else {
 					w.log.Info("the schedule is planned", "time", nextTs)
 					// dbSchedule.LastRunAt = dbSchedule.NextRunAt
 					// dbSchedule.NextRunAt = &nextTs
-					SetFieldValue(tv.FieldByName(c.FieldsByName["NextRunAt"].StructName), nextTs)
-					SetFieldValue(tv.FieldByName(c.FieldsByName["LastRunAt"].StructName), lastRunAt)
+					SetFieldValue(tv.FieldByName(c.FieldsByName["NextRunAt"].AttrName), nextTs)
+					SetFieldValue(tv.FieldByName(c.FieldsByName["LastRunAt"].AttrName), lastRunAt)
 				}
 			}
 			if err := w.Save(tx, dbSchedule); err != nil {
@@ -216,12 +216,12 @@ func (w *Scheduler[S]) processTasks() error {
 	return err
 }
 
-func (w *Scheduler[S]) FindAllActiveAndUnprocessed(tx *sql.Tx, moment time.Time) ([]*S, error) {
+func (w *Scheduler[S]) FindAllActive(tx *sql.Tx, moment time.Time) ([]*S, error) {
 	c := &w.meta
 
 	var fields []string
 	for _, f := range c.Fields {
-		fields = append(fields, f.DbName)
+		fields = append(fields, f.ColumnName)
 	}
 
 	query := fmt.Sprintf(
@@ -232,8 +232,8 @@ func (w *Scheduler[S]) FindAllActiveAndUnprocessed(tx *sql.Tx, moment time.Time)
 		for update`,
 		strings.Join(fields, ", "),
 		c.TableName,
-		c.FieldsByName["IsActive"].DbName, c.FieldsByName["NextRunAt"].DbName, c.FieldsByName["NextRunAt"].DbName,
-		c.FieldsByName["NextRunAt"].DbName,
+		c.FieldsByName["IsActive"].ColumnName, c.FieldsByName["NextRunAt"].ColumnName, c.FieldsByName["NextRunAt"].ColumnName,
+		c.FieldsByName["NextRunAt"].ColumnName,
 	)
 	stmt, err := tx.Prepare(query)
 	if err != nil {
@@ -269,7 +269,7 @@ func (w *Scheduler[S]) FindAllActiveAndUnprocessed(tx *sql.Tx, moment time.Time)
 					return nil, err
 				}
 			}
-			SetFieldValue(v.FieldByName(f.StructName), value)
+			SetFieldValue(v.FieldByName(f.AttrName), value)
 		}
 		schedules = append(schedules, schedule)
 	}
@@ -292,7 +292,7 @@ func (w *Scheduler[S]) Create(tx *sql.Tx, schedule *S) error {
 		if f.Name == "Id" {
 			continue
 		}
-		value := tv.FieldByName(f.StructName).Interface()
+		value := tv.FieldByName(f.AttrName).Interface()
 		if f.Name == "Args" {
 			var err error
 			value, err = json.Marshal(value)
@@ -300,7 +300,7 @@ func (w *Scheduler[S]) Create(tx *sql.Tx, schedule *S) error {
 				return err
 			}
 		}
-		fields = append(fields, f.DbName)
+		fields = append(fields, f.ColumnName)
 		valuesHolder = append(valuesHolder, fmt.Sprintf("$%d", idx))
 		values = append(values, value)
 		idx++
@@ -314,7 +314,7 @@ func (w *Scheduler[S]) Create(tx *sql.Tx, schedule *S) error {
 		c.TableName,
 		strings.Join(fields, ", "),
 		strings.Join(valuesHolder, ", "),
-		c.FieldsByName["Id"].DbName,
+		c.FieldsByName["Id"].ColumnName,
 	)
 	stmt, err := tx.Prepare(query)
 	if err != nil {
@@ -324,7 +324,7 @@ func (w *Scheduler[S]) Create(tx *sql.Tx, schedule *S) error {
 
 	var id any
 	err = stmt.QueryRow(values...).Scan(&id)
-	SetFieldValue(tv.FieldByName(c.FieldsByName["Id"].StructName), id)
+	SetFieldValue(tv.FieldByName(c.FieldsByName["Id"].AttrName), id)
 
 	return err
 }
@@ -340,11 +340,11 @@ func (w *Scheduler[S]) Save(tx *sql.Tx, schedule *S) error {
 	idx := 1
 	for _, f := range c.Fields {
 		if f.Name == "Id" {
-			idValue = tv.FieldByName(f.StructName).Interface()
+			idValue = tv.FieldByName(f.AttrName).Interface()
 			continue
 		}
 
-		value := tv.FieldByName(f.StructName).Interface()
+		value := tv.FieldByName(f.AttrName).Interface()
 
 		if f.Name == "Args" {
 			var err error
@@ -354,7 +354,7 @@ func (w *Scheduler[S]) Save(tx *sql.Tx, schedule *S) error {
 			}
 		}
 
-		fields = append(fields, fmt.Sprintf("%s=$%d", f.DbName, idx))
+		fields = append(fields, fmt.Sprintf("%s=$%d", f.ColumnName, idx))
 		values = append(values, value)
 		idx++
 	}
@@ -366,7 +366,7 @@ func (w *Scheduler[S]) Save(tx *sql.Tx, schedule *S) error {
 		where %s=$%d`,
 		c.TableName,
 		strings.Join(fields, ", "),
-		c.FieldsByName["Id"].DbName, len(values),
+		c.FieldsByName["Id"].ColumnName, len(values),
 	)
 	res, err := tx.Exec(query, values...)
 	if err != nil {
@@ -386,7 +386,7 @@ func (w *Scheduler[S]) Delete(tx *sql.Tx, pk any) error {
 	c := &w.meta
 	query := fmt.Sprintf(
 		`delete from %s where %s=$1`,
-		c.TableName, c.FieldsByName["Id"].DbName,
+		c.TableName, c.FieldsByName["Id"].ColumnName,
 	)
 	res, err := tx.Exec(query, pk)
 	if err != nil {

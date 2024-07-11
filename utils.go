@@ -28,9 +28,9 @@ func RunInTransaction(db *sql.DB, f func(tx *sql.Tx) error) error {
 }
 
 type FieldMeta struct {
-	Name       string
-	StructName string
-	DbName     string
+	Name       string // a barn's name
+	AttrName   string // a field name in a user structure
+	ColumnName string // a name in a DB
 }
 
 type TableMeta struct {
@@ -84,8 +84,8 @@ func GetTableMeta(t interface{}) TableMeta {
 		}
 		fieldConfig := FieldMeta{
 			Name:       fieldName,
-			StructName: f.Name,
-			DbName:     dbName,
+			AttrName:   f.Name,
+			ColumnName: dbName,
 		}
 		meta.Fields = append(meta.Fields, &fieldConfig)
 		meta.FieldsByName[fieldName] = &fieldConfig

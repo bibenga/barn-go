@@ -146,7 +146,7 @@ func (w *Worker[T]) process() error {
 	c := &w.meta
 	for {
 		err := RunInTransaction(w.db, func(tx *sql.Tx) error {
-			t, err := w.FindNext(tx)
+			t, err := w.FindQueued(tx)
 			if err != nil {
 				return err
 			}
@@ -160,18 +160,18 @@ func (w *Worker[T]) process() error {
 				w.log.Error("the task is processed with error", "error", err)
 				finishedAt := time.Now().UTC()
 				errorMessage := err.Error()
-				SetFieldValue(tv.FieldByName(c.FieldsByName["Status"].StructName), Failed)
-				SetFieldValue(tv.FieldByName(c.FieldsByName["StartedAt"].StructName), startedAt)
-				SetFieldValue(tv.FieldByName(c.FieldsByName["FinishedAt"].StructName), finishedAt)
-				SetFieldValue(tv.FieldByName(c.FieldsByName["Error"].StructName), errorMessage)
+				SetFieldValue(tv.FieldByName(c.FieldsByName["Status"].AttrName), Failed)
+				SetFieldValue(tv.FieldByName(c.FieldsByName["StartedAt"].AttrName), startedAt)
+				SetFieldValue(tv.FieldByName(c.FieldsByName["FinishedAt"].AttrName), finishedAt)
+				SetFieldValue(tv.FieldByName(c.FieldsByName["Error"].AttrName), errorMessage)
 			} else {
 				w.log.Info("the task is processed with success")
 				finishedAt := time.Now().UTC()
-				SetFieldValue(tv.FieldByName(c.FieldsByName["Status"].StructName), Done)
-				SetFieldValue(tv.FieldByName(c.FieldsByName["StartedAt"].StructName), startedAt)
-				SetFieldValue(tv.FieldByName(c.FieldsByName["FinishedAt"].StructName), finishedAt)
+				SetFieldValue(tv.FieldByName(c.FieldsByName["Status"].AttrName), Done)
+				SetFieldValue(tv.FieldByName(c.FieldsByName["StartedAt"].AttrName), startedAt)
+				SetFieldValue(tv.FieldByName(c.FieldsByName["FinishedAt"].AttrName), finishedAt)
 				if result != IgnoreResult {
-					SetFieldValue(tv.FieldByName(c.FieldsByName["Result"].StructName), result)
+					SetFieldValue(tv.FieldByName(c.FieldsByName["Result"].AttrName), result)
 				}
 			}
 			w.log.Debug("save task", "task", t)
@@ -199,12 +199,12 @@ func (w *Worker[T]) deleteOld() error {
 	})
 }
 
-func (w *Worker[T]) FindNext(tx *sql.Tx) (*T, error) {
+func (w *Worker[T]) FindQueued(tx *sql.Tx) (*T, error) {
 	c := &w.meta
 
 	var fields []string
 	for _, f := range c.Fields {
-		fields = append(fields, f.DbName)
+		fields = append(fields, f.ColumnName)
 	}
 
 	query := fmt.Sprintf(
@@ -216,8 +216,8 @@ func (w *Worker[T]) FindNext(tx *sql.Tx) (*T, error) {
 		for update skip locked`,
 		strings.Join(fields, ", "),
 		c.TableName,
-		c.FieldsByName["Status"].DbName, c.FieldsByName["RunAt"].DbName,
-		c.FieldsByName["RunAt"].DbName,
+		c.FieldsByName["Status"].ColumnName, c.FieldsByName["RunAt"].ColumnName,
+		c.FieldsByName["RunAt"].ColumnName,
 	)
 	stmt, err := tx.Prepare(query)
 	if err != nil {
@@ -249,7 +249,7 @@ func (w *Worker[T]) FindNext(tx *sql.Tx) (*T, error) {
 				return nil, err
 			}
 		}
-		SetFieldValue(v.FieldByName(f.StructName), value)
+		SetFieldValue(v.FieldByName(f.AttrName), value)
 	}
 
 	return t, nil
@@ -269,31 +269,31 @@ func (w *Worker[T]) Create(tx *sql.Tx, t *T) error {
 			continue
 		}
 
-		value := tv.FieldByName(f.StructName).Interface()
+		value := tv.FieldByName(f.AttrName).Interface()
 
 		if f.Name == "RunAt" {
 			if v, ok := value.(time.Time); ok {
 				if v.IsZero() {
 					value = time.Now().UTC()
-					SetFieldValue(tv.FieldByName(f.StructName), value)
+					SetFieldValue(tv.FieldByName(f.AttrName), value)
 				}
 			} else if v, ok := value.(*time.Time); ok {
 				if v == nil {
 					// v1 := time.Now().UTC()
 					// value = &v1
 					value = time.Now().UTC()
-					SetFieldValue(tv.FieldByName(f.StructName), value)
+					SetFieldValue(tv.FieldByName(f.AttrName), value)
 				}
 			}
 		} else if f.Name == "Status" {
 			if v, ok := value.(Status); ok {
 				if v == "" {
 					value = Queued
-					SetFieldValue(tv.FieldByName(f.StructName), value)
+					SetFieldValue(tv.FieldByName(f.AttrName), value)
 				}
 			} else {
 				value = Queued
-				SetFieldValue(tv.FieldByName(f.StructName), value)
+				SetFieldValue(tv.FieldByName(f.AttrName), value)
 			}
 
 		} else if f.Name == "Args" || f.Name == "Result" {
@@ -304,7 +304,7 @@ func (w *Worker[T]) Create(tx *sql.Tx, t *T) error {
 			}
 		}
 
-		fields = append(fields, f.DbName)
+		fields = append(fields, f.ColumnName)
 		valuesHolder = append(valuesHolder, fmt.Sprintf("$%d", idx))
 		values = append(values, value)
 		idx++
@@ -318,7 +318,7 @@ func (w *Worker[T]) Create(tx *sql.Tx, t *T) error {
 		c.TableName,
 		strings.Join(fields, ", "),
 		strings.Join(valuesHolder, ", "),
-		c.FieldsByName["Id"].DbName,
+		c.FieldsByName["Id"].ColumnName,
 	)
 	stmt, err := tx.Prepare(query)
 	if err != nil {
@@ -328,7 +328,7 @@ func (w *Worker[T]) Create(tx *sql.Tx, t *T) error {
 
 	var id any
 	err = stmt.QueryRow(values...).Scan(&id)
-	SetFieldValue(tv.FieldByName(c.FieldsByName["Id"].StructName), id)
+	SetFieldValue(tv.FieldByName(c.FieldsByName["Id"].AttrName), id)
 
 	return err
 }
@@ -344,35 +344,35 @@ func (w *Worker[T]) Save(tx *sql.Tx, t *T) error {
 	idx := 1
 	for _, f := range c.Fields {
 		if f.Name == "Id" {
-			idValue = tv.FieldByName(f.StructName).Interface()
+			idValue = tv.FieldByName(f.AttrName).Interface()
 			continue
 		}
 
-		value := tv.FieldByName(f.StructName).Interface()
+		value := tv.FieldByName(f.AttrName).Interface()
 
 		if f.Name == "RunAt" {
 			if v, ok := value.(time.Time); ok {
 				if v.IsZero() {
 					value = time.Now().UTC()
-					SetFieldValue(tv.FieldByName(f.StructName), value)
+					SetFieldValue(tv.FieldByName(f.AttrName), value)
 				}
 			} else if v, ok := value.(*time.Time); ok {
 				if v == nil {
 					// v1 := time.Now().UTC()
 					// value = &v1
 					value = time.Now().UTC()
-					SetFieldValue(tv.FieldByName(f.StructName), value)
+					SetFieldValue(tv.FieldByName(f.AttrName), value)
 				}
 			}
 		} else if f.Name == "Status" {
 			if v, ok := value.(Status); ok {
 				if v == "" {
 					value = Queued
-					SetFieldValue(tv.FieldByName(f.StructName), value)
+					SetFieldValue(tv.FieldByName(f.AttrName), value)
 				}
 			} else {
 				value = Queued
-				SetFieldValue(tv.FieldByName(f.StructName), value)
+				SetFieldValue(tv.FieldByName(f.AttrName), value)
 			}
 
 		} else if f.Name == "Args" || f.Name == "Result" {
@@ -383,7 +383,7 @@ func (w *Worker[T]) Save(tx *sql.Tx, t *T) error {
 			}
 		}
 
-		fields = append(fields, fmt.Sprintf("%s=$%d", f.DbName, idx))
+		fields = append(fields, fmt.Sprintf("%s=$%d", f.ColumnName, idx))
 		values = append(values, value)
 		idx++
 	}
@@ -395,7 +395,7 @@ func (w *Worker[T]) Save(tx *sql.Tx, t *T) error {
 		where %s=$%d`,
 		c.TableName,
 		strings.Join(fields, ", "),
-		c.FieldsByName["Id"].DbName, len(values),
+		c.FieldsByName["Id"].ColumnName, len(values),
 	)
 	res, err := tx.Exec(query, values...)
 	if err != nil {
@@ -417,7 +417,7 @@ func (w *Worker[T]) DeleteOld(tx *sql.Tx, moment time.Time) (int, error) {
 		`delete from %s 
 		where %s in ($1, $2) and %s<=$3`,
 		c.TableName,
-		c.FieldsByName["Status"].DbName, c.FieldsByName["RunAt"].DbName,
+		c.FieldsByName["Status"].ColumnName, c.FieldsByName["RunAt"].ColumnName,
 	)
 	res, err := tx.Exec(query, Done, Failed, moment)
 	if err != nil {
