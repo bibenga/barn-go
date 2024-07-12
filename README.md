@@ -4,10 +4,10 @@ This is a simple scheduler with a database store (it was tested only with Postgr
 
 ### Using the task pool
 
-* [An example with a default model](bibenga/barn-go/blob/main/examples/task/main.go)
-* [An example with a custom model](bibenga/barn-go/blob/main/examples/task_model/main.go)
+* [An example with a default model](blob/main/examples/task/main.go)
+* [An example with a custom model](blob/main/examples/task_model/main.go)
 
 
 ### Using the scheduler
-* [An example of the scheduler with a default model](bibenga/barn-go/blob/main/examples/scheduler/main.go)
-* [An example of the scheduler and the task pool with a default models](bibenga/barn-go/blob/main/examples/complex/main.go)
+* [An example of the scheduler with a default model](blob/main/examples/scheduler/main.go)
+* [An example of the scheduler and the task pool with a default models](blob/main/examples/complex/main.go)
