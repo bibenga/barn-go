@@ -13,46 +13,35 @@ import (
 	"github.com/bibenga/barn-go/examples"
 )
 
-type TaskPay struct {
-	// barngo.Task
-	Id         int           `barn:""`
-	RunAt      time.Time     `barn:""`
-	Status     barngo.Status `barn:""`
-	StartedAt  *time.Time    `barn:""`
-	FinishedAt *time.Time    `barn:""`
-	Error      *string       `barn:""`
-
-	User           string  `barn:"user_id"`
-	Amount         float64 `barn:""`
-	IdempotencyKey string  `barn:""`
-	Attemt         int     `barn:""`
-	MaxAttempts    int     `barn:""`
-}
-
-func (e TaskPay) TableName() string {
-	return "barn_task_pay"
-}
-
 func main() {
 	examples.Setup(true)
 
-	db := examples.InitDb(true, "examples/task/schema.sql")
+	db := examples.InitDb(true, "")
 	defer db.Close()
 
-	var worker *barngo.Worker[TaskPay]
-	worker = barngo.NewWorker[TaskPay](
+	var worker *barngo.Worker[barngo.Task]
+	worker = barngo.NewWorker[barngo.Task](
 		db,
-		barngo.WorkerConfig[TaskPay]{
+		barngo.WorkerConfig[barngo.Task]{
 			Cron: "*/5 * * * * *",
-			Handler: func(tx *sql.Tx, task *TaskPay) (any, error) {
-				if task.Attemt < task.MaxAttempts {
-					task1 := TaskPay{
-						RunAt:          time.Now().Add(5 * time.Second),
-						User:           task.User,
-						Amount:         task.Amount,
-						IdempotencyKey: task.IdempotencyKey,
-						Attemt:         task.Attemt + 1,
-						MaxAttempts:    task.MaxAttempts,
+			Handler: func(tx *sql.Tx, task *barngo.Task) (any, error) {
+				args := task.Args.(map[string]any)
+				user := args["User"].(string)
+				amount := args["Amount"].(float64)
+				idempotencyKey := args["IdempotencyKey"].(string)
+				attempt := int(args["Attemt"].(float64))
+				maxAttempts := int(args["MaxAttempts"].(float64))
+				if attempt < maxAttempts {
+					task1 := barngo.Task{
+						RunAt: time.Now().Add(5 * time.Second),
+						Func:  "pay",
+						Args: map[string]any{
+							"User":           user,
+							"Amount":         amount,
+							"IdempotencyKey": idempotencyKey,
+							"Attemt":         attempt + 1,
+							"MaxAttempts":    maxAttempts,
+						},
 					}
 					if err := worker.Create(tx, &task1); err != nil {
 						return nil, err
@@ -65,14 +54,15 @@ func main() {
 	)
 
 	err := barngo.RunInTransaction(db, func(tx *sql.Tx) error {
-		task1 := TaskPay{
-			// Func: "sentEmail",
-			// Args: map[string]any{"str": "str", "int": 12},
-			User:           "1360b505-b41f-45c1-966b-eb71c775604b",
-			Amount:         100,
-			IdempotencyKey: "social-romeo-river-king",
-			Attemt:         1,
-			MaxAttempts:    10,
+		task1 := barngo.Task{
+			Func: "pay",
+			Args: map[string]any{
+				"User":           "1360b505-b41f-45c1-966b-eb71c775604b",
+				"Amount":         200,
+				"IdempotencyKey": "social-romeo-river-king",
+				"Attemt":         1,
+				"MaxAttempts":    2,
+			},
 		}
 		if err := worker.Create(tx, &task1); err != nil {
 			return err

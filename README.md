@@ -1,9 +1,10 @@
-# Barn
+## Task pool and scheduler using database
 
 This is a simple scheduler with a database store (it was tested only with PostgreSQL)
 
+### Using the task pool
 
-## Usage of scheduler
+### Using the scheduler
 ```go
 package main
 
