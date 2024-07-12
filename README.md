@@ -9,5 +9,5 @@ This is a simple scheduler with a database store (it was tested only with Postgr
 
 
 ### Using the scheduler
-* [An example of the scheduler with a default model](blob/main/examples/scheduler/main.go)
-* [An example of the scheduler and the task pool with a default models](blob/main/examples/complex/main.go)
+* [An example of the scheduler with a default model](examples/scheduler/main.go)
+* [An example of the scheduler and the task pool with a default models](examples/complex/main.go)
