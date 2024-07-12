@@ -163,8 +163,10 @@ func (w *Worker[T]) process() error {
 				SetFieldValue(tv.FieldByName(c.FieldsByName["Status"].AttrName), Done)
 				SetFieldValue(tv.FieldByName(c.FieldsByName["StartedAt"].AttrName), startedAt)
 				SetFieldValue(tv.FieldByName(c.FieldsByName["FinishedAt"].AttrName), finishedAt)
-				if result != IgnoreResult {
-					SetFieldValue(tv.FieldByName(c.FieldsByName["Result"].AttrName), result)
+				if f, ok := c.FieldsByName["Result"]; ok {
+					if result != IgnoreResult {
+						SetFieldValue(tv.FieldByName(f.AttrName), result)
+					}
 				}
 			}
 			w.log.Debug("save task", "task", t)

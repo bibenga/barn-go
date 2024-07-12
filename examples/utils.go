@@ -49,7 +49,8 @@ func InitDb(trace bool, schemaFile string) *sql.DB {
 	if schemaFile == "" {
 		schemaFile = "examples/schema.sql"
 	}
-	bytes, err := os.ReadFile("examples/schema.sql")
+	slog.Info("load a database schema", "file", schemaFile)
+	bytes, err := os.ReadFile(schemaFile)
 	if err != nil {
 		panic(err)
 	}
