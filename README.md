@@ -4,8 +4,8 @@ This is a simple scheduler with a database store (it was tested only with Postgr
 
 ### Using the task pool
 
-* [An example with a default model](blob/main/examples/task/main.go)
-* [An example with a custom model](blob/main/examples/task_model/main.go)
+* [An example with a default model](examples/task/main.go)
+* [An example with a custom model](examples/task_model/main.go)
 
 
 ### Using the scheduler
