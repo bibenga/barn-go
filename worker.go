@@ -139,7 +139,7 @@ func (w *Worker[T]) process() error {
 	c := &w.meta
 	for {
 		err := RunInTransaction(w.db, func(tx *sql.Tx) error {
-			t, err := w.FindQueued(tx)
+			t, err := w.FindNext(tx)
 			if err != nil {
 				return err
 			}
@@ -194,7 +194,7 @@ func (w *Worker[T]) deleteOld() error {
 	})
 }
 
-func (w *Worker[T]) FindQueued(tx *sql.Tx) (*T, error) {
+func (w *Worker[T]) FindNext(tx *sql.Tx) (*T, error) {
 	c := &w.meta
 
 	var fields []string

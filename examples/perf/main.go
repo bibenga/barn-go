@@ -50,7 +50,7 @@ func process(db *sql.DB, repository *barngo.Worker[barngo.Task]) {
 			}
 		}
 		err := barngo.RunInTransaction(db, func(tx *sql.Tx) error {
-			t, err := repository.FindQueued(tx)
+			t, err := repository.FindNext(tx)
 			if err != nil {
 				return err
 			}

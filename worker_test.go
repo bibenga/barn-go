@@ -52,7 +52,7 @@ func TestWorkerFindNext(t *testing.T) {
 			return err
 		}
 
-		if f, err := worker.FindQueued(tx); err != nil {
+		if f, err := worker.FindNext(tx); err != nil {
 			return err
 		} else {
 			assert.NotNil(f)
@@ -87,7 +87,7 @@ func TestWorkerFindNextPending(t *testing.T) {
 			return err
 		}
 
-		if f, err := worker.FindQueued(tx); err != nil {
+		if f, err := worker.FindNext(tx); err != nil {
 			return err
 		} else {
 			assert.Nil(f)

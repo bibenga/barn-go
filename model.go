@@ -14,15 +14,15 @@ const (
 )
 
 type Task struct {
-	Id         int        `barn:""`
-	RunAt      time.Time  `barn:""`
-	Func       string     `barn:""`
-	Args       any        `barn:""`
-	Status     Status     `barn:""`
-	StartedAt  *time.Time `barn:""`
-	FinishedAt *time.Time `barn:""`
-	Result     any        `barn:""`
-	Error      *string    `barn:""`
+	Id         int            `barn:""`
+	RunAt      time.Time      `barn:""`
+	Func       string         `barn:""`
+	Args       map[string]any `barn:""`
+	Status     Status         `barn:""`
+	StartedAt  *time.Time     `barn:""`
+	FinishedAt *time.Time     `barn:""`
+	Result     any            `barn:""`
+	Error      *string        `barn:""`
 }
 
 func (e Task) TableName() string {
@@ -56,14 +56,14 @@ func (e Task) LogValue() slog.Value {
 }
 
 type Schedule struct {
-	Id        int        `barn:""`
-	Name      string     `barn:""`
-	IsActive  bool       `barn:""`
-	Cron      *string    `barn:""`
-	NextRunAt *time.Time `barn:""`
-	LastRunAt *time.Time `barn:""`
-	Func      string     `barn:""`
-	Args      any        `barn:""`
+	Id        int            `barn:""`
+	Name      string         `barn:""`
+	IsActive  bool           `barn:""`
+	Cron      *string        `barn:""`
+	NextRunAt *time.Time     `barn:""`
+	LastRunAt *time.Time     `barn:""`
+	Func      string         `barn:""`
+	Args      map[string]any `barn:""`
 }
 
 func (e Schedule) TableName() string {

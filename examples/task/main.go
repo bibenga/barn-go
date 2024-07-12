@@ -25,7 +25,8 @@ func main() {
 		barngo.WorkerConfig[barngo.Task]{
 			Cron: "*/5 * * * * *",
 			Handler: func(tx *sql.Tx, task *barngo.Task) (any, error) {
-				args := task.Args.(map[string]any)
+				// args := task.Args.(map[string]any)
+				args := task.Args
 				user := args["User"].(string)
 				amount := args["Amount"].(float64)
 				idempotencyKey := args["IdempotencyKey"].(string)
@@ -61,7 +62,7 @@ func main() {
 				"Amount":         200,
 				"IdempotencyKey": "social-romeo-river-king",
 				"Attemt":         1,
-				"MaxAttempts":    2,
+				"MaxAttempts":    10,
 			},
 		}
 		if err := worker.Create(tx, &task1); err != nil {
