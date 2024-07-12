@@ -11,23 +11,33 @@ import (
 	"github.com/bibenga/barn-go/examples"
 )
 
+type ExampleTask struct {
+	barngo.Task
+	Attempt     int `barn:""`
+	MaxAttempts int `barn:""`
+}
+
 func main() {
 	examples.Setup(true)
 
-	db := examples.InitDb(false)
+	db := examples.InitDb(true, "")
 	defer db.Close()
 
-	worker := barngo.NewWorker[barngo.Task](
+	worker := barngo.NewWorker[ExampleTask](
 		db,
-		barngo.WorkerConfig[barngo.Task]{
+		barngo.WorkerConfig[ExampleTask]{
 			Cron: "*/5 * * * * *",
 		},
 	)
 
 	err := barngo.RunInTransaction(db, func(tx *sql.Tx) error {
-		task1 := barngo.Task{
-			Func: "sentEmail",
-			Args: map[string]any{"str": "str", "int": 12},
+		task1 := ExampleTask{
+			Task: barngo.Task{
+				Func: "sentEmail",
+				Args: map[string]any{"str": "str", "int": 12},
+			},
+			// Func: "sentEmail",
+			// Args: map[string]any{"str": "str", "int": 12},
 		}
 		if err := worker.Create(tx, &task1); err != nil {
 			return err

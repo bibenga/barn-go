@@ -25,7 +25,7 @@ func Setup(trace bool) {
 	}
 }
 
-func InitDb(trace bool) *sql.DB {
+func InitDb(trace bool, schemaFile string) *sql.DB {
 	connectionString := ConnectionString
 	if trace {
 		config, err := pgx.ParseConfig(connectionString)
@@ -46,6 +46,9 @@ func InitDb(trace bool) *sql.DB {
 		panic(err)
 	}
 
+	if schemaFile == "" {
+		schemaFile = "examples/schema.sql"
+	}
 	bytes, err := os.ReadFile("examples/schema.sql")
 	if err != nil {
 		panic(err)

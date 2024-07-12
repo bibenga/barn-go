@@ -79,7 +79,7 @@ func process(db *sql.DB, repository *barngo.Worker[barngo.Task]) {
 func main() {
 	examples.Setup(true)
 
-	db := examples.InitDb(false)
+	db := examples.InitDb(false, "")
 	defer db.Close()
 
 	repository := barngo.NewWorker[barngo.Task](db)

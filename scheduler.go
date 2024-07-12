@@ -18,13 +18,6 @@ import (
 
 type SchedulerHandler[S any] func(tx *sql.Tx, schedule *S) error
 
-func dummySchedulerHandler[S any](tx *sql.Tx, s *S) error {
-	slog.Debug("DUMMY: process", "schedule", s)
-	return nil
-}
-
-var _ SchedulerHandler[Schedule] = dummySchedulerHandler[Schedule]
-
 type SchedulerConfig[S any] struct {
 	Log     *slog.Logger
 	Cron    string
@@ -410,4 +403,22 @@ func (w *Scheduler[S]) DeleteAll(tx *sql.Tx) error {
 	)
 	_, err := tx.Exec(query)
 	return err
+}
+
+func dummySchedulerHandler[S any](tx *sql.Tx, s *S) error {
+	slog.Debug("DUMMY: process", "schedule", s)
+	return nil
+}
+
+var _ SchedulerHandler[Schedule] = dummySchedulerHandler[Schedule]
+
+func DefaultSchedulerHandler(worker *Worker[Task]) SchedulerHandler[Schedule] {
+	handler := func(tx *sql.Tx, schedule *Schedule) error {
+		task := Task{
+			Func: schedule.Func,
+			Args: schedule.Args,
+		}
+		return worker.Create(tx, &task)
+	}
+	return handler
 }

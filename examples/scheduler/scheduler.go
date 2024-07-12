@@ -14,7 +14,7 @@ import (
 func main() {
 	examples.Setup(true)
 
-	db := examples.InitDb(false)
+	db := examples.InitDb(false, "")
 	defer db.Close()
 
 	worker := barngo.NewScheduler[barngo.Schedule](

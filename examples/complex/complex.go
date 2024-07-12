@@ -36,7 +36,7 @@ func scheduleHandler(tx *sql.Tx, s *barngo.Schedule) error {
 func main() {
 	examples.Setup(true)
 
-	db := examples.InitDb(false)
+	db := examples.InitDb(false, "")
 	defer db.Close()
 
 	registry = barngo.NewTaskRegistry()

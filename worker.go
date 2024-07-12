@@ -20,13 +20,6 @@ const IgnoreResult = "IgnoreResult"
 
 type TaskHandler[T any] func(tx *sql.Tx, task *T) (any, error)
 
-func dummyTaskHandler[T any](tx *sql.Tx, t *T) (any, error) {
-	slog.Info("DUMMY: process", "task", t)
-	return IgnoreResult, nil
-}
-
-var _ TaskHandler[Task] = dummyTaskHandler[Task]
-
 type WorkerConfig[T any] struct {
 	Log     *slog.Logger
 	Cron    string
@@ -439,3 +432,10 @@ func (w *Worker[T]) DeleteAll(tx *sql.Tx) error {
 	_, err := tx.Exec(query)
 	return err
 }
+
+func dummyTaskHandler[T any](tx *sql.Tx, t *T) (any, error) {
+	slog.Info("DUMMY: process", "task", t)
+	return IgnoreResult, nil
+}
+
+var _ TaskHandler[Task] = dummyTaskHandler[Task]

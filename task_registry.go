@@ -51,3 +51,10 @@ func (r *TaskRegistry) ApplyAsync(tx *sql.Tx, name string, args any, countdown *
 	}
 	return errors.New("not implemented")
 }
+
+func DefaultRegistryTaskHandler(registry *TaskRegistry) TaskHandler[Task] {
+	handler := func(tx *sql.Tx, task *Task) (any, error) {
+		return registry.Call(tx, task.Func, task.Args)
+	}
+	return handler
+}
