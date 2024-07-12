@@ -15,6 +15,7 @@ import (
 
 type TaskPay struct {
 	// barngo.Task
+	// these fields are required
 	Id         int           `barn:""`
 	RunAt      time.Time     `barn:""`
 	Status     barngo.Status `barn:""`
@@ -22,6 +23,7 @@ type TaskPay struct {
 	FinishedAt *time.Time    `barn:""`
 	Error      *string       `barn:""`
 
+	// custom models, not all types are supported
 	User           string  `barn:"user_id"`
 	Amount         float64 `barn:""`
 	IdempotencyKey string  `barn:""`

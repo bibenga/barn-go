@@ -11,7 +11,7 @@ import (
 func TestWorkerCreate(t *testing.T) {
 	assert := require.New(t)
 
-	db := setupTestDb(t)
+	db := newTestDb(t)
 
 	worker := NewWorker[Task](db)
 
@@ -39,7 +39,7 @@ func TestWorkerCreate(t *testing.T) {
 func TestWorkerFindNext(t *testing.T) {
 	assert := require.New(t)
 
-	db := setupTestDb(t)
+	db := newTestDb(t)
 
 	worker := NewWorker[Task](db)
 
@@ -73,7 +73,7 @@ func TestWorkerFindNext(t *testing.T) {
 func TestWorkerFindNextPending(t *testing.T) {
 	assert := require.New(t)
 
-	db := setupTestDb(t)
+	db := newTestDb(t)
 
 	worker := NewWorker[Task](db)
 

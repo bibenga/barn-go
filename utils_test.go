@@ -63,20 +63,7 @@ func newTestDb(t *testing.T) *sql.DB {
 	assert.NotNil(db)
 	assert.NoError(db.Ping())
 
-	t.Cleanup(func() {
-		t.Helper()
-		err = db.Close()
-		assert.NoError(err)
-	})
-	return db
-}
-
-func setupTestDb(t *testing.T) *sql.DB {
-	t.Helper()
-	assert := require.New(t)
-
-	db := newTestDb(t)
-
+	// test database schema
 	bytes, err := os.ReadFile("schema_test.sql")
 	if err != nil {
 		panic(err)
@@ -88,6 +75,11 @@ func setupTestDb(t *testing.T) *sql.DB {
 	})
 	assert.NoError(err)
 
+	t.Cleanup(func() {
+		t.Helper()
+		err = db.Close()
+		assert.NoError(err)
+	})
 	return db
 }
 

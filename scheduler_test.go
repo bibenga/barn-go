@@ -10,7 +10,7 @@ import (
 func TestSchedulerCreate(t *testing.T) {
 	assert := require.New(t)
 
-	db := setupTestDb(t)
+	db := newTestDb(t)
 
 	scheduler := NewScheduler[Schedule](db)
 
