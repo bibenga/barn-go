@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"time"
 
 	barngo "github.com/bibenga/barn-go"
 	"github.com/bibenga/barn-go/examples"
@@ -25,13 +26,15 @@ func main() {
 	)
 
 	err := barngo.RunInTransaction(db, func(tx *sql.Tx) error {
-		cron1 := "*/5 * * * * *"
+		interval1 := 7 * time.Second
+		// cron1 := "*/5 * * * * *"
 		schedule := barngo.Schedule{
 			Name:     "olala1",
 			IsActive: true,
-			Cron:     &cron1,
-			Func:     "sendEmails",
-			Args:     map[string]any{"type": "welcome"},
+			Interval: &interval1,
+			// Cron: &cron1,
+			Func: "sendEmails",
+			Args: map[string]any{"type": "welcome"},
 		}
 		if err := worker.Create(tx, &schedule); err != nil {
 			return err

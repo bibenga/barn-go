@@ -144,12 +144,18 @@ func (w *Scheduler[S]) processTasks() error {
 			return err
 		}
 		w.log.Debug("the schedules is loaded", "count", len(schedules))
-		for _, dbSchedule := range schedules {
-			w.log.Info("process the schedule", "schedule", dbSchedule)
+		for _, schedule := range schedules {
+			w.log.Info("process the schedule", "schedule", schedule)
 
-			tv := reflect.ValueOf(dbSchedule).Elem()
+			tv := reflect.ValueOf(schedule).Elem()
 
 			lastRunAt := time.Now().UTC()
+
+			if err := w.handler(tx, schedule); err != nil {
+				w.log.Error("the schedule processed with error", "error", err)
+			}
+
+			SetFieldValue(tv.FieldByName(c.FieldsByName["LastRunAt"].AttrName), lastRunAt)
 
 			nextRunAtV := tv.FieldByName(c.FieldsByName["NextRunAt"].AttrName).Interface()
 			var nextRunAt *time.Time
@@ -159,48 +165,50 @@ func (w *Scheduler[S]) processTasks() error {
 				nextRunAt = val
 			}
 
-			cronV := tv.FieldByName(c.FieldsByName["Cron"].AttrName).Interface()
-			var cron *string
-			if val, ok := cronV.(string); ok {
-				cron = &val
-			} else if val, ok := cronV.(*string); ok {
-				cron = val
+			var interval *time.Duration
+			if intervalField, ok := c.FieldsByName["Interval"]; ok {
+				intervalV := tv.FieldByName(intervalField.AttrName).Interface()
+				if val, ok := intervalV.(time.Duration); ok {
+					interval = &val
+				} else if val, ok := intervalV.(*time.Duration); ok {
+					interval = val
+				}
 			}
 
-			if nextRunAt == nil && cron == nil {
-				w.log.Debug("the schedule is not valid")
-				// dbSchedule.IsActive = false
-				SetFieldValue(tv.FieldByName(c.FieldsByName["IsActive"].AttrName), false)
-				if err := w.Save(tx, dbSchedule); err != nil {
-					return err
+			var cron *string
+			if cronField, ok := c.FieldsByName["Cron"]; ok {
+				cronV := tv.FieldByName(cronField.AttrName).Interface()
+				if val, ok := cronV.(string); ok {
+					cron = &val
+				} else if val, ok := cronV.(*string); ok {
+					cron = val
 				}
-				continue
 			}
-			if err := w.handler(tx, dbSchedule); err != nil {
-				w.log.Error("the schedule processed with error", "error", err)
-			}
-			if cron == nil {
-				w.log.Info("the schedule is one shot")
-				// dbSchedule.IsActive = false
-				// dbSchedule.LastRunAt = dbSchedule.NextRunAt
-				SetFieldValue(tv.FieldByName(c.FieldsByName["IsActive"].AttrName), false)
-				SetFieldValue(tv.FieldByName(c.FieldsByName["LastRunAt"].AttrName), lastRunAt)
-			} else {
+
+			if interval != nil {
+				var nextTs time.Time
+				if nextRunAt == nil {
+					nextTs = time.Now().UTC().Add(*interval)
+				} else {
+					nextTs = nextRunAt.Add(*interval)
+				}
+				SetFieldValue(tv.FieldByName(c.FieldsByName["NextRunAt"].AttrName), nextTs)
+			} else if cron != nil {
 				if nextTs, err := gronx.NextTick(*cron, false); err != nil {
-					w.log.Info("the schedule has an invalid cron expression", "error", err)
-					// dbSchedule.IsActive = false
-					// dbSchedule.LastRunAt = dbSchedule.NextRunAt
+					w.log.Warn("the schedule has an invalid cron expression", "error", err)
 					SetFieldValue(tv.FieldByName(c.FieldsByName["IsActive"].AttrName), false)
-					SetFieldValue(tv.FieldByName(c.FieldsByName["LastRunAt"].AttrName), lastRunAt)
 				} else {
 					w.log.Info("the schedule is planned", "time", nextTs)
 					// dbSchedule.LastRunAt = dbSchedule.NextRunAt
 					// dbSchedule.NextRunAt = &nextTs
 					SetFieldValue(tv.FieldByName(c.FieldsByName["NextRunAt"].AttrName), nextTs)
-					SetFieldValue(tv.FieldByName(c.FieldsByName["LastRunAt"].AttrName), lastRunAt)
 				}
+			} else {
+				w.log.Info("the schedule is one shot")
+				SetFieldValue(tv.FieldByName(c.FieldsByName["IsActive"].AttrName), false)
 			}
-			if err := w.Save(tx, dbSchedule); err != nil {
+
+			if err := w.Save(tx, schedule); err != nil {
 				return err
 			}
 		}

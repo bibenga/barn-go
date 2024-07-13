@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
+	"time"
 )
 
 func RunInTransaction(db *sql.DB, f func(tx *sql.Tx) error) error {
@@ -58,7 +60,7 @@ func GetTableMeta(t interface{}) TableMeta {
 	if tabler, ok := t.(Tabler); ok {
 		meta.TableName = tabler.TableName()
 	} else {
-		meta.TableName = CamelToSnake(tt.Name())
+		meta.TableName = camelToSnake(tt.Name())
 	}
 	fields := reflect.VisibleFields(tt)
 	for _, f := range fields {
@@ -69,7 +71,7 @@ func GetTableMeta(t interface{}) TableMeta {
 		var fieldName, dbName string
 		if tag == "" {
 			fieldName = f.Name
-			dbName = CamelToSnake(f.Name)
+			dbName = camelToSnake(f.Name)
 		} else {
 			names := strings.Fields(tag)
 			if len(names) == 1 {
@@ -97,10 +99,19 @@ func GetTableMeta(t interface{}) TableMeta {
 	return meta
 }
 
+func (m *TableMeta) SetValue(model reflect.Value, name string, value any) bool {
+	if f, ok := m.FieldsByName[name]; ok {
+		SetFieldValue(model.FieldByName(f.AttrName), value)
+		return true
+	} else {
+		return false
+	}
+}
+
 var matchFirstCap = regexp.MustCompile("(.)([A-Z][a-z]+)")
 var matchAllCap = regexp.MustCompile("([a-z0-9])([A-Z])")
 
-func CamelToSnake(name string) string {
+func camelToSnake(name string) string {
 	snake := matchFirstCap.ReplaceAllString(name, "${1}_${2}")
 	snake = matchAllCap.ReplaceAllString(snake, "${1}_${2}")
 	return strings.ToLower(snake)
@@ -125,6 +136,29 @@ func SetFieldValue(field reflect.Value, value any) {
 				field.Set(vValue)
 			} else if vValue.Type().ConvertibleTo(field.Type()) {
 				field.Set(vValue.Convert(field.Type()))
+			} else if field.Type().Name() == "Duration" && vValue.Kind() == reflect.String {
+				sValue := value.(string)
+				parts := strings.Split(sValue, ":")
+				if len(parts) != 3 {
+					panic(errors.New("can't set value"))
+				}
+				hour, err := strconv.Atoi(parts[0])
+				if err != nil {
+					panic(err)
+				}
+				minute, err := strconv.Atoi(parts[1])
+				if err != nil {
+					panic(err)
+				}
+				second, err := strconv.Atoi(parts[2])
+				if err != nil {
+					panic(err)
+				}
+				// dur := ((hour*24 + minute) + second) * time.Second
+				dur := time.Duration(hour)*time.Hour +
+					time.Duration(minute)*time.Minute +
+					time.Duration(second)*time.Second
+				SetFieldValue(field, dur)
 			} else {
 				panic(errors.New("can't set value"))
 			}
