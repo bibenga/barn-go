@@ -136,7 +136,7 @@ func (w *Worker[T]) run(ctx context.Context) {
 
 func (w *Worker[T]) process() error {
 	w.log.Debug("process")
-	c := &w.meta
+	meta := &w.meta
 	for {
 		err := RunInTransaction(w.db, func(tx *sql.Tx) error {
 			t, err := w.FindNext(tx)
@@ -151,22 +151,17 @@ func (w *Worker[T]) process() error {
 			startedAt := time.Now().UTC()
 			if result, err := w.handler(tx, t); err != nil {
 				w.log.Error("the task is processed with error", "error", err)
-				finishedAt := time.Now().UTC()
-				errorMessage := err.Error()
-				SetFieldValue(tv.FieldByName(c.FieldsByName["Status"].AttrName), Failed)
-				SetFieldValue(tv.FieldByName(c.FieldsByName["StartedAt"].AttrName), startedAt)
-				SetFieldValue(tv.FieldByName(c.FieldsByName["FinishedAt"].AttrName), finishedAt)
-				SetFieldValue(tv.FieldByName(c.FieldsByName["Error"].AttrName), errorMessage)
+				meta.SetValue(tv, "Status", Failed)
+				meta.SetValue(tv, "StartedAt", startedAt)
+				meta.SetValue(tv, "FinishedAt", time.Now().UTC())
+				meta.SetValue(tv, "Error", err.Error())
 			} else {
 				w.log.Info("the task is processed with success")
-				finishedAt := time.Now().UTC()
-				SetFieldValue(tv.FieldByName(c.FieldsByName["Status"].AttrName), Done)
-				SetFieldValue(tv.FieldByName(c.FieldsByName["StartedAt"].AttrName), startedAt)
-				SetFieldValue(tv.FieldByName(c.FieldsByName["FinishedAt"].AttrName), finishedAt)
-				if f, ok := c.FieldsByName["Result"]; ok {
-					if result != IgnoreResult {
-						SetFieldValue(tv.FieldByName(f.AttrName), result)
-					}
+				meta.SetValue(tv, "Status", Done)
+				meta.SetValue(tv, "StartedAt", startedAt)
+				meta.SetValue(tv, "FinishedAt", time.Now().UTC())
+				if meta.Has("Result") && result != IgnoreResult {
+					meta.SetValue(tv, "Result", result)
 				}
 			}
 			w.log.Debug("save task", "task", t)
@@ -195,10 +190,10 @@ func (w *Worker[T]) deleteOld() error {
 }
 
 func (w *Worker[T]) FindNext(tx *sql.Tx) (*T, error) {
-	c := &w.meta
+	meta := &w.meta
 
 	var fields []string
-	for _, f := range c.Fields {
+	for _, f := range meta.Fields {
 		fields = append(fields, f.ColumnName)
 	}
 
@@ -210,9 +205,9 @@ func (w *Worker[T]) FindNext(tx *sql.Tx) (*T, error) {
 		limit 1
 		for update skip locked`,
 		strings.Join(fields, ", "),
-		c.TableName,
-		c.FieldsByName["Status"].ColumnName, c.FieldsByName["RunAt"].ColumnName,
-		c.FieldsByName["RunAt"].ColumnName,
+		meta.TableName,
+		meta.FieldsByName["Status"].ColumnName, meta.FieldsByName["RunAt"].ColumnName,
+		meta.FieldsByName["RunAt"].ColumnName,
 	)
 	stmt, err := tx.Prepare(query)
 	if err != nil {
@@ -236,7 +231,7 @@ func (w *Worker[T]) FindNext(tx *sql.Tx) (*T, error) {
 
 	var t = new(T)
 	v := reflect.ValueOf(t).Elem()
-	for pos, f := range c.Fields {
+	for pos, f := range meta.Fields {
 		value := values[pos]
 		if f.Name == "Args" || f.Name == "Result" {
 			bytes := value.([]byte)
@@ -244,14 +239,14 @@ func (w *Worker[T]) FindNext(tx *sql.Tx) (*T, error) {
 				return nil, err
 			}
 		}
-		SetFieldValue(v.FieldByName(f.AttrName), value)
+		meta.SetValue(v, f.Name, value)
 	}
 
 	return t, nil
 }
 
 func (w *Worker[T]) Create(tx *sql.Tx, t *T) error {
-	c := &w.meta
+	meta := &w.meta
 
 	tv := reflect.ValueOf(t).Elem()
 
@@ -259,36 +254,34 @@ func (w *Worker[T]) Create(tx *sql.Tx, t *T) error {
 	var valuesHolder []string
 	var values []any
 	idx := 1
-	for _, f := range c.Fields {
+	for _, f := range meta.Fields {
 		if f.Name == "Id" {
 			continue
 		}
 
-		value := tv.FieldByName(f.AttrName).Interface()
+		value, _ := meta.GetValue(tv, f.Name)
 
 		if f.Name == "RunAt" {
 			if v, ok := value.(time.Time); ok {
 				if v.IsZero() {
 					value = time.Now().UTC()
-					SetFieldValue(tv.FieldByName(f.AttrName), value)
+					meta.SetValue(tv, f.Name, value)
 				}
 			} else if v, ok := value.(*time.Time); ok {
 				if v == nil {
-					// v1 := time.Now().UTC()
-					// value = &v1
 					value = time.Now().UTC()
-					SetFieldValue(tv.FieldByName(f.AttrName), value)
+					meta.SetValue(tv, f.Name, value)
 				}
 			}
 		} else if f.Name == "Status" {
 			if v, ok := value.(Status); ok {
 				if v == "" {
 					value = Queued
-					SetFieldValue(tv.FieldByName(f.AttrName), value)
+					meta.SetValue(tv, f.Name, value)
 				}
 			} else {
 				value = Queued
-				SetFieldValue(tv.FieldByName(f.AttrName), value)
+				meta.SetValue(tv, f.Name, value)
 			}
 
 		} else if f.Name == "Args" || f.Name == "Result" {
@@ -310,10 +303,10 @@ func (w *Worker[T]) Create(tx *sql.Tx, t *T) error {
 		`insert into %s(%s) 
 		values (%s) 
 		returning %s`,
-		c.TableName,
+		meta.TableName,
 		strings.Join(fields, ", "),
 		strings.Join(valuesHolder, ", "),
-		c.FieldsByName["Id"].ColumnName,
+		meta.FieldsByName["Id"].ColumnName,
 	)
 	stmt, err := tx.Prepare(query)
 	if err != nil {
@@ -323,13 +316,13 @@ func (w *Worker[T]) Create(tx *sql.Tx, t *T) error {
 
 	var id any
 	err = stmt.QueryRow(values...).Scan(&id)
-	SetFieldValue(tv.FieldByName(c.FieldsByName["Id"].AttrName), id)
+	meta.SetValue(tv, "Id", id)
 
 	return err
 }
 
 func (w *Worker[T]) Save(tx *sql.Tx, t *T) error {
-	c := &w.meta
+	meta := &w.meta
 
 	tv := reflect.ValueOf(t).Elem()
 
@@ -337,37 +330,35 @@ func (w *Worker[T]) Save(tx *sql.Tx, t *T) error {
 	var fields []string
 	var values []any
 	idx := 1
-	for _, f := range c.Fields {
+	for _, f := range meta.Fields {
 		if f.Name == "Id" {
-			idValue = tv.FieldByName(f.AttrName).Interface()
+			idValue, _ = meta.GetValue(tv, f.Name)
 			continue
 		}
 
-		value := tv.FieldByName(f.AttrName).Interface()
+		value, _ := meta.GetValue(tv, f.Name)
 
 		if f.Name == "RunAt" {
 			if v, ok := value.(time.Time); ok {
 				if v.IsZero() {
 					value = time.Now().UTC()
-					SetFieldValue(tv.FieldByName(f.AttrName), value)
+					meta.SetValue(tv, f.Name, time.Now().UTC())
 				}
 			} else if v, ok := value.(*time.Time); ok {
 				if v == nil {
-					// v1 := time.Now().UTC()
-					// value = &v1
 					value = time.Now().UTC()
-					SetFieldValue(tv.FieldByName(f.AttrName), value)
+					meta.SetValue(tv, f.Name, value)
 				}
 			}
 		} else if f.Name == "Status" {
 			if v, ok := value.(Status); ok {
 				if v == "" {
 					value = Queued
-					SetFieldValue(tv.FieldByName(f.AttrName), value)
+					meta.SetValue(tv, f.Name, value)
 				}
 			} else {
 				value = Queued
-				SetFieldValue(tv.FieldByName(f.AttrName), value)
+				meta.SetValue(tv, f.Name, value)
 			}
 
 		} else if f.Name == "Args" || f.Name == "Result" {
@@ -388,9 +379,9 @@ func (w *Worker[T]) Save(tx *sql.Tx, t *T) error {
 		`update %s
 		set %s
 		where %s=$%d`,
-		c.TableName,
+		meta.TableName,
 		strings.Join(fields, ", "),
-		c.FieldsByName["Id"].ColumnName, len(values),
+		meta.FieldsByName["Id"].ColumnName, len(values),
 	)
 	res, err := tx.Exec(query, values...)
 	if err != nil {
@@ -407,12 +398,12 @@ func (w *Worker[T]) Save(tx *sql.Tx, t *T) error {
 }
 
 func (w *Worker[T]) DeleteOld(tx *sql.Tx, moment time.Time) (int, error) {
-	c := &w.meta
+	meta := &w.meta
 	query := fmt.Sprintf(
 		`delete from %s 
 		where %s in ($1, $2) and %s<=$3`,
-		c.TableName,
-		c.FieldsByName["Status"].ColumnName, c.FieldsByName["RunAt"].ColumnName,
+		meta.TableName,
+		meta.FieldsByName["Status"].ColumnName, meta.FieldsByName["RunAt"].ColumnName,
 	)
 	res, err := tx.Exec(query, Done, Failed, moment)
 	if err != nil {
@@ -426,10 +417,10 @@ func (w *Worker[T]) DeleteOld(tx *sql.Tx, moment time.Time) (int, error) {
 }
 
 func (w *Worker[T]) DeleteAll(tx *sql.Tx) error {
-	c := &w.meta
+	meta := &w.meta
 	query := fmt.Sprintf(
 		`delete from %s`,
-		c.TableName,
+		meta.TableName,
 	)
 	_, err := tx.Exec(query)
 	return err

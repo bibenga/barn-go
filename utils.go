@@ -99,9 +99,22 @@ func GetTableMeta(t interface{}) TableMeta {
 	return meta
 }
 
+func (m *TableMeta) Has(name string) bool {
+	_, ok := m.FieldsByName[name]
+	return ok
+}
+
+func (m *TableMeta) GetValue(model reflect.Value, name string) (any, bool) {
+	if f, ok := m.FieldsByName[name]; ok {
+		return model.FieldByName(f.AttrName).Interface(), true
+	} else {
+		return nil, false
+	}
+}
+
 func (m *TableMeta) SetValue(model reflect.Value, name string, value any) bool {
 	if f, ok := m.FieldsByName[name]; ok {
-		SetFieldValue(model.FieldByName(f.AttrName), value)
+		setFieldValue(model.FieldByName(f.AttrName), value)
 		return true
 	} else {
 		return false
@@ -117,16 +130,16 @@ func camelToSnake(name string) string {
 	return strings.ToLower(snake)
 }
 
-func SetFieldValue(field reflect.Value, value any) {
+func setFieldValue(field reflect.Value, value any) {
 	vValue := reflect.ValueOf(value)
 	if field.Kind() == reflect.Pointer {
 		if value == nil || (vValue.Kind() == reflect.Pointer && vValue.IsNil()) {
 			field.SetZero()
 		} else if field.IsNil() {
 			field.Set(reflect.New(field.Type().Elem()))
-			SetFieldValue(field.Elem(), value)
+			setFieldValue(field.Elem(), value)
 		} else {
-			SetFieldValue(field.Elem(), value)
+			setFieldValue(field.Elem(), value)
 		}
 	} else {
 		if value == nil || (vValue.Kind() == reflect.Pointer && vValue.IsNil()) {
@@ -158,7 +171,7 @@ func SetFieldValue(field reflect.Value, value any) {
 				dur := time.Duration(hour)*time.Hour +
 					time.Duration(minute)*time.Minute +
 					time.Duration(second)*time.Second
-				SetFieldValue(field, dur)
+				setFieldValue(field, dur)
 			} else {
 				panic(errors.New("can't set value"))
 			}
