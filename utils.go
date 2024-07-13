@@ -92,10 +92,6 @@ func GetTableMeta(t interface{}) TableMeta {
 		meta.Fields = append(meta.Fields, &fieldConfig)
 		meta.FieldsByName[fieldName] = &fieldConfig
 	}
-	// TODO: check required fields
-	// if meta.Id.Name == "" || meta.Id.DbName == "" {
-	// 	panic(errors.New("id field is not found"))
-	// }
 	return meta
 }
 

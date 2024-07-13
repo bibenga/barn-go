@@ -58,7 +58,10 @@ func NewScheduler[S any](db *sql.DB, config ...SchedulerConfig[S]) *Scheduler[S]
 	if handler == nil {
 		handler = dummySchedulerHandler[S]
 	}
+
 	meta := GetTableMeta(new(S))
+	// TODO: check required fields
+
 	scheduler := Scheduler[S]{
 		log:     log,
 		handler: handler,

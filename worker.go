@@ -63,7 +63,10 @@ func NewWorker[T any](db *sql.DB, config ...WorkerConfig[T]) *Worker[T] {
 	if handler == nil {
 		handler = dummyTaskHandler[T]
 	}
+
 	meta := GetTableMeta(new(T))
+	// TODO: check required fields
+
 	w := Worker[T]{
 		log:     log,
 		handler: handler,
@@ -148,22 +151,19 @@ func (w *Worker[T]) process() error {
 			}
 			w.log.Info("process task", "task", t)
 			tv := reflect.ValueOf(t).Elem()
-			startedAt := time.Now().UTC()
+			meta.SetValue(tv, "StartedAt", time.Now().UTC())
 			if result, err := w.handler(tx, t); err != nil {
 				w.log.Error("the task is processed with error", "error", err)
 				meta.SetValue(tv, "Status", Failed)
-				meta.SetValue(tv, "StartedAt", startedAt)
-				meta.SetValue(tv, "FinishedAt", time.Now().UTC())
 				meta.SetValue(tv, "Error", err.Error())
 			} else {
 				w.log.Info("the task is processed with success")
 				meta.SetValue(tv, "Status", Done)
-				meta.SetValue(tv, "StartedAt", startedAt)
-				meta.SetValue(tv, "FinishedAt", time.Now().UTC())
 				if meta.Has("Result") && result != IgnoreResult {
 					meta.SetValue(tv, "Result", result)
 				}
 			}
+			meta.SetValue(tv, "FinishedAt", time.Now().UTC())
 			w.log.Debug("save task", "task", t)
 			if err := w.Save(tx, t); err != nil {
 				return err
