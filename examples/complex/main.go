@@ -25,6 +25,11 @@ func taskHandler(tx *sql.Tx, t *barngo.Task) (any, error) {
 	return barngo.IgnoreResult, nil
 }
 
+func sendNotifications(tx *sql.Tx, args any) (any, error) {
+	slog.Info("CALLED: sendNotifications", "args", args)
+	return true, nil
+}
+
 func scheduleHandler(tx *sql.Tx, s *barngo.Schedule) error {
 	return worker.Create(tx, &barngo.Task{
 		RunAt: *s.NextRunAt,
@@ -40,10 +45,7 @@ func main() {
 	defer db.Close()
 
 	registry = barngo.NewTaskRegistry()
-	registry.Register("sendNotifications", func(tx *sql.Tx, args any) (any, error) {
-		slog.Info("CALLED: sendNotifications", "args", args)
-		return true, nil
-	})
+	registry.Register("sendNotifications", sendNotifications)
 
 	scheduler = barngo.NewScheduler[barngo.Schedule](
 		db,
