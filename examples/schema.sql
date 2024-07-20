@@ -13,7 +13,8 @@ create table if not exists barn_task (
     error varchar, 
     primary key (id)
 );
-create index if not exists idx_barn_task_run_at on barn_task(run_at);
+create index if not exists barn_task_find_next_idx on barn_task(run_at) where status='Q';
+create index if not exists barn_task_delete_idx on barn_task(run_at) where status = 'D' or status = 'F';
 
 -- delete from barn_task;
 
